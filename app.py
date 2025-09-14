@@ -238,10 +238,12 @@ class MainWnidow:
 
 
 
-app = Dash(use_pages=True, 
-           pages_folder="",
-           title="Панель продаж",
-           requests_pathname_prefix='/salespanel/'
+app = Dash(
+           use_pages=True, 
+           pages_folder="",           
+           #requests_pathname_prefix='/salespanel/',
+           #routes_pathname_prefix="/salespanel/",
+           title="Панель продаж"
            )
 MainWnidow().main_page_callbacks(app)
 sd_components().register_callbacks(app)
