@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import dash
 
+
 from dash.exceptions import PreventUpdate
 from datetime import datetime, date, timedelta
 import io
@@ -238,13 +239,13 @@ class MainWnidow:
 
 
 
+# app.py - для локальной разработки БЕЗ префиксов
 app = Dash(
-           use_pages=True, 
-           pages_folder="",           
-           #requests_pathname_prefix='/salespanel/',
-           #routes_pathname_prefix="/salespanel/",
-           title="Панель продаж"
-           )
+    use_pages=True, 
+    pages_folder="",           
+    title="Панель продаж"
+)
+
 MainWnidow().main_page_callbacks(app)
 sd_components().register_callbacks(app)
 
@@ -256,7 +257,7 @@ dash.register_page("Матрица", path="/Matrix", layout=html.Div("page 1 sub
 app.layout = MainWnidow().page_layout
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=8050)
 
 
 
