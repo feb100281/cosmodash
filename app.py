@@ -238,7 +238,11 @@ class MainWnidow:
 
 
 
-app = Dash(use_pages=True, pages_folder="",title="CosmoDash")
+app = Dash(use_pages=True, 
+           pages_folder="",
+           title="Панель продаж",
+           requests_pathname_prefix='/salespanel/'
+           )
 MainWnidow().main_page_callbacks(app)
 sd_components().register_callbacks(app)
 
@@ -246,9 +250,6 @@ dash.register_page("Резюме", path="/", layout=SummaryComponents().layout)
 dash.register_page("Динамика продаж", path="/Sales_dimamix", layout=sd_components().make_layout())
 dash.register_page("Сегментный анализ", path="/Segments", layout=html.Div("page 1 subject 1"))
 dash.register_page("Матрица", path="/Matrix", layout=html.Div("page 1 subject 2"))
-
-
-
 
 app.layout = MainWnidow().page_layout
 
