@@ -1,0 +1,19 @@
+-- создаем папку на диске для проекта
+
+-- заходим в папку
+
+-- в терминале набираем
+
+python3.12 -m venv venv
+
+source venv/bin/activate
+
+-- копируем файлы проекта
+
+pip install -r requrements.txt
+
+-- колекционируем статики
+
+cd static 
+cp -R /Users/pavelustenko/cosmodash/assets .
+
