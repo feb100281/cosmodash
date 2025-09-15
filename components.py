@@ -14,6 +14,27 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 DATES = pd.date_range("2021-01-31", periods=30*12, freq="ME")
 
+
+BASE_COLORS = [
+    "blue", "cyan", "teal", "green", "lime", "yellow", "orange",
+    "red", "pink", "grape", "violet", "indigo", "gray", "dark", "brand",
+]
+
+SHADES = ["6", "3", "9"]
+
+# 1) По оттенкам: сначала все .3, потом .6, потом .9 
+def colors_by_shade(base=BASE_COLORS, shades=SHADES):
+    return [f"{c}.{s}" for s in shades for c in base]
+
+# 2) По цветам: для каждого цвета три оттенка подряд (blue.3, blue.6, blue.9, затем next color)
+def colors_by_color(base=BASE_COLORS, shades=SHADES):
+    return [f"{c}.{s}" for c in base for s in shades]
+
+
+# Примеры готовых списков
+COLORS_BY_SHADE = colors_by_shade()
+COLORS_BY_COLOR = colors_by_color()
+
 class MonthSlider(dmc.RangeSlider):
     def __init__(self,id, min_date='2022-01-31', max_date=None, defaul_period=12, **kwargs):
         dates = DATES
@@ -152,4 +173,53 @@ class InDevNotice:
             fluid=True,
             px="xl",
         )
-        
+
+class NoData:
+    def __init__(self):
+        self.component = dmc.Container(
+            dmc.Center(
+                dmc.Stack(
+                    [
+                        dmc.Space(h=20),
+                        dmc.Center(
+                            DashIconify(icon="carbon:data-error", width=80, color="gray"),
+                        ),
+                        dmc.Center(
+                            dmc.Title("Нет данных", order=3, c="gray"),
+                        ),
+                        dmc.Center(
+                            dmc.Text(
+                                "Пока нет данных для данного раздела",
+                                size="md",
+                                c="dimmed",
+                            ),
+                        ),
+                        dmc.Space(h=20),
+                    ]
+                )
+            ),
+            fluid=True,   # ✅ у Container это допустимо
+            px="xl"
+        )
+
+MONTHS = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+    # если нужны русские месяцы
+    "Янв": 1, "Фев": 2, "Мар": 3, "Апр": 4, "Май": 5, "Июн": 6,
+    "Июл": 7, "Авг": 8, "Сен": 9, "Окт": 10, "Ноя": 11, "Дек": 12,
+}
+
+def month_str_to_date(s: str) -> str:
+    """
+    Превращает строку 'Авг 23' или 'Aug 23' в '2023-08-01'
+    """
+    try:
+        mon_str, year_str = s.split()
+        month = MONTHS[mon_str]
+        year = int(year_str)
+        if year < 100:  # двухзначный год
+            year += 2000
+        return f"{year:04d}-{month:02d}-01"
+    except Exception as e:
+        raise ValueError(f"Невозможно распарсить '{s}': {e}")

@@ -241,7 +241,8 @@ def main_app():
     app = Dash(
         use_pages=True, 
         pages_folder="",          
-        title="Панель продаж"
+        title="Панель продаж",
+        suppress_callback_exceptions=True
     )
     
 
@@ -254,6 +255,8 @@ def main_app():
     dash.register_page("Матрица", path="/Matrix", layout=html.Div("page 1 subject 2"))
 
     app.layout = MainWnidow().page_layout
+    
+    
 
     return app
 
