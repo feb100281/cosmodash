@@ -142,6 +142,33 @@ def delete_df_from_redis(df_id):
     r.delete(df_id)
 
 
+def load_column_dates(column_name, dates):
+    dates_str = pd.to_datetime(dates, errors="coerce").strftime("%Y-%m-%d").tolist()
+
+    
+    series_list = []
+    for d in dates_str:
+        key = f"mydf:{column_name}:{d}"
+        data = r.get(key)
+        
+        if data:
+            series_list.append(pickle.loads(data))
+    if series_list:
+        return pd.concat(series_list, ignore_index=True)
+    else:
+        return pd.Series(dtype=object)
+
+def load_columns_dates(columns, dates):
+    """
+    Загружает DataFrame по списку дат и списку колонок.
+    """
+    data = {}
+    for col in columns:
+        data[col] = load_column_dates(col, dates)
+    return pd.DataFrame(data)
+
+
+
 cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat']
 #cols = ['manager','date','amount','store','eom','chanel','cat']
 

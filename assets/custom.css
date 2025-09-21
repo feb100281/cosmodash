@@ -85,8 +85,45 @@
   font-weight: 600;
 }
 
+/* Контейнер */
+.markdown-body {
+    font-family: "Inter", sans-serif !important;
+    font-size: 14px !important;
+    color: #1a1b1e !important;
+    line-height: 1.6;
+}
 
+/* Параграфы */
+.markdown-body p {
+    margin: 0 0 8px 0;
+}
 
+/* Списки */
+.markdown-body ul {
+    padding-left: 20px;
+    margin: 0 0 8px 0;
+}
+.markdown-body ul li {
+    margin: 4px 0;
+}
+
+/* Жирный и курсив */
+.markdown-body strong {
+    font-weight: 600;
+}
+.markdown-body em {
+    font-style: italic;
+}
+
+/* HTML span для цветов */
+.markdown-body .text-red {
+    color: #e03131;
+    font-weight: bold;
+}
+.markdown-body .text-green {
+    color: #37b24d;
+    font-weight: bold;
+}
 
 
 
