@@ -34,7 +34,7 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, DATES, NoData, month_str_to_date
+from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice
 from data import (
     load_df_from_redis,
     load_columns_dates,
@@ -49,6 +49,12 @@ class AreaChartModal:
         self.modal_id = {"type": "gt_area_chart_modal", "index": "1"}
         self.modal_text_id = {"type": "gt_area_chart_modal_text", "index": "1"}
 
+        self.check_distiribution_chart_id = {
+            "type": "check_distiribution_chart",
+            "index": "1",
+        }
+        self.check_disttibution_ag_id = {"type": "check_distiribution_ag", "index": "1"}
+
     def make_modal(self):
 
         return dmc.Container(
@@ -61,10 +67,154 @@ class AreaChartModal:
             ]
         )
 
+    def update_ag(self, d, rrgrid_className):
+        def parcer(d):
+            if not d or "bins" not in d:
+                return None, None
+
+            # Берем все ключи кроме 'bins'
+            months = [k.split(" — ")[0] for k in d.keys() if k != "bins"]
+            if not months:
+                return d["bins"], None
+
+            # Последний месяц
+            last_month = pd.to_datetime(months[-1], format="%b %y", errors="coerce")
+            return d["bins"], last_month
+
+        _bin, _month = parcer(d)
+
+        _month = pd.to_datetime(_month, errors="coerce") + pd.offsets.MonthEnd(0)
+
+        COLS = [
+            "date",
+            "dt",
+            "store",
+            "eom",
+            "chanel",
+            "manager",
+            "client_order",
+            "quant",
+            "client_order_number",
+        ]
+
+        df_current = load_columns_dates(COLS, [_month])
+        df_current["orders_type"] = np.where(
+            df_current["client_order"] == "<Продажи без заказа>",
+            "Прочие",
+            "Заказы клиента",
+        )
+
+        df_orders = (
+            df_current.pivot_table(
+                index=["client_order_number"],
+                values=["dt", "quant", "store", "manager", "date", "orders_type"],
+                aggfunc={
+                    "dt": "sum",
+                    "quant": "sum",
+                    "store": "last",
+                    "manager": "last",
+                    "date": "last",
+                    "orders_type": "last",
+                },
+            )
+            .reset_index()
+            .sort_values("date")
+        )
+        df_orders = df_orders[df_orders["dt"] > 1]
+
+        step = 50_000
+        last_edge = 350_000
+
+        # формируем границы
+        bin_edges = list(np.arange(0, last_edge, step)) + [np.inf]
+
+        # формируем подписи
+        bin_labels = []
+        for i in range(len(bin_edges) - 1):
+            left = bin_edges[i]
+            right = bin_edges[i + 1]
+
+            if right == np.inf:
+                label = f"от ₽{left/1000:,.0f} тыс и выше"
+            elif left == 0:
+                label = f"до ₽{right/1000:,.0f} тыс"
+            else:
+                label = f"от ₽{left/1000:,.0f} до ₽{right/1000:,.0f} тыс"
+
+            bin_labels.append(label)
+
+        # нарезаем на бины
+        df_orders["bins"] = pd.cut(
+            df_orders["dt"],
+            bins=bin_edges,
+            labels=bin_labels,
+            include_lowest=True,
+        )
+
+        dff: pd.DataFrame = df_orders[df_orders["bins"] == _bin].copy()
+        dff["date"] = pd.to_datetime(dff["date"]).dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+        # columns = [{"headerName": col, "field": col} for col in dff.columns]
+        # print(columns)
+        date_obj = "d3.timeParse('%Y-%m-%dT%H:%M:%S')(params.data.date)"
+        cols = [
+            {"headerName": "Номер заказа", 
+             "field": "client_order_number"},
+            {
+            "headerName": "Дата",
+            "field": "date",
+            "valueFormatter": {"function": f"d3.timeFormat('%d.%m.%Y')({date_obj})"},
+            },
+            {"headerName": "Тип", 
+             "field": "orders_type"},
+            {"headerName": "Магазин", 
+             "field": "store"},
+            {
+            "headerName": "Сумма",
+            "field": "dt",
+            "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''" },
+            },
+            {
+                "headerName": "Коли-во товара",
+                "field": "quant",
+                "valueFormatter": {
+                    "function": "params.value ?  d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') + ' ед' : ''"
+                },
+            },
+            {"headerName": "Манеджер", "field": "manager"},
+        ]
+
+        return dmc.Stack([
+            dmc.Space(h=5),
+            dmc.Title(f"Детали заказов в ценовом сегменте {_bin}",order=4),
+            dmc.Space(h=10),
+            dag.AgGrid(            
+            id="orders-grid",
+            rowData=dff.to_dict("records"),
+            columnDefs=cols,
+            defaultColDef={
+                "sortable": True,
+                "filter": True,
+                "resizable": True,
+            },
+            dashGridOptions={
+                "rowSelection": "single",
+                "pagination": True,
+                "paginationPageSize": 20,
+            },
+            style={"height": "600px", "width": "100%"},
+            className=rrgrid_className,
+            dangerously_allow_code=True            
+        ),
+            
+        ]
+        )
+
     def update_modal(self):
 
         month = pd.to_datetime(self.month, errors="coerce")
         last_month = month + pd.offsets.MonthEnd(-1)
+        chart_id = self.check_distiribution_chart_id
 
         COLS = [
             "date",
@@ -88,22 +238,22 @@ class AreaChartModal:
             "Прочие",
             "Заказы клиента",
         )
-        
-        max_date = pd.to_datetime(df_current['date'].max(),errors='coerce')
+
+        max_date = pd.to_datetime(df_current["date"].max(), errors="coerce")
         min_date = max_date - pd.offsets.MonthBegin(1)
-        
+
         df_orders = df_current.pivot_table(
             index=["eom", "client_order_number", "orders_type"],
             values=["dt", "quant"],
             aggfunc="sum",
         ).reset_index()
-        
+
         df_orders = df_orders[df_orders["dt"] > 1]
         df_orders["av_price"] = df_orders["dt"] / df_orders["quant"]
 
         def check_distibution_chart():
-            dff = df_orders[["eom","orders_type", "dt"]].copy()
-            
+            dff = df_orders[["eom", "orders_type", "dt"]].copy()
+
             step = 50_000
             last_edge = 350_000
 
@@ -127,7 +277,7 @@ class AreaChartModal:
 
             # нарезаем на бины
             dff["bins"] = pd.cut(
-                dff["dt"],  
+                dff["dt"],
                 bins=bin_edges,
                 labels=bin_labels,
                 include_lowest=True,
@@ -135,7 +285,7 @@ class AreaChartModal:
 
             res = dff.pivot_table(
                 index="bins",
-                columns=["eom","orders_type"],
+                columns=["eom", "orders_type"],
                 values="dt",
                 aggfunc="count",
                 observed=False,
@@ -151,24 +301,19 @@ class AreaChartModal:
 
             chart_data = res.to_dict("records")
 
-           
             chart_series = []
             if len(monthes) > 2:
-               chart_series = [
-                   {"name": monthes[0], "color": "violet.6", "stackId": "a"},
-                   {"name": monthes[1], "color": "violet.3", "stackId": "a"},
-                   {"name": monthes[2], "color": "blue.6", "stackId": "b"},
-                   {"name": monthes[3], "color": "blue.3", "stackId": "b"},
-                   
-               ] 
+                chart_series = [
+                    {"name": monthes[0], "color": "violet.6", "stackId": "a"},
+                    {"name": monthes[1], "color": "violet.3", "stackId": "a"},
+                    {"name": monthes[2], "color": "blue.6", "stackId": "b"},
+                    {"name": monthes[3], "color": "blue.3", "stackId": "b"},
+                ]
             else:
-               chart_series = [
-                   {"name": monthes[0], "color": "violet.6", "stackId": "a"},
-                   {"name": monthes[1], "color": "violet.3", "stackId": "a"},
-                
-               ]
-
-            
+                chart_series = [
+                    {"name": monthes[0], "color": "violet.6", "stackId": "a"},
+                    {"name": monthes[1], "color": "violet.3", "stackId": "a"},
+                ]
 
             xAxisProps = {
                 "angle": -45,
@@ -178,7 +323,7 @@ class AreaChartModal:
 
             return dmc.Stack(
                 children=[
-                    dmc.Title("График распредления среднего чека по заказам", order=5),
+                    dmc.Title("График распредления среднего чека по ценовым категориям", order=5),
                     dmc.BarChart(
                         h=300,
                         dataKey="bins",  # должно соответствовать названию столбца с бинами
@@ -188,7 +333,7 @@ class AreaChartModal:
                         gridAxis="x",
                         withXAxis=True,
                         withYAxis=True,
-                        id="av_check_destribution",
+                        id=chart_id,
                         # style={"marginBottom": 60},
                         yAxisLabel="Количество",
                         withLegend=True,
@@ -196,204 +341,341 @@ class AreaChartModal:
                     ),
                 ],
             )
-        
-        
 
         def memo():
-            
+
             df = df_orders.copy()
-            df['month_id'] = pd.factorize(df.eom,sort=True)[0]
-            
+            df["month_id"] = pd.factorize(df.eom, sort=True)[0]
+
             last_vs = pd.to_datetime(last_month).date()
-            last_vs:str = last_vs.strftime('%b %y')
+            last_vs: str = last_vs.strftime("%b %y")
             vs = f"vs {last_vs.capitalize()}"
-            
+
             summary_orders_type = df.pivot_table(
-                index = 'orders_type',
-                columns='month_id',
-                values=['dt','client_order_number','quant'],
+                index="orders_type",
+                columns="month_id",
+                values=["dt", "client_order_number", "quant"],
                 aggfunc={
-                    'dt':['sum','mean','median','max','min'],
-                    'client_order_number':'nunique',
-                    'quant':'sum'
-                }
+                    "dt": ["sum", "mean", "median", "max", "min"],
+                    "client_order_number": "nunique",
+                    "quant": "sum",
+                },
             ).fillna(0)
-            summary_orders_type.columns = ['_'.join(map(str, col)).strip() for col in summary_orders_type.columns.values]
-            
-            ['client_order_number_nunique_0', 'client_order_number_nunique_1', 'dt_max_0', 'dt_max_1', 'dt_mean_0', 'dt_mean_1', 'dt_median_0', 'dt_median_1', 'dt_min_0', 'dt_min_1', 'dt_sum_0', 'dt_sum_1', 'quant_sum_0', 'quant_sum_1']
-            
+            summary_orders_type.columns = [
+                "_".join(map(str, col)).strip()
+                for col in summary_orders_type.columns.values
+            ]
+
+            [
+                "client_order_number_nunique_0",
+                "client_order_number_nunique_1",
+                "dt_max_0",
+                "dt_max_1",
+                "dt_mean_0",
+                "dt_mean_1",
+                "dt_median_0",
+                "dt_median_1",
+                "dt_min_0",
+                "dt_min_1",
+                "dt_sum_0",
+                "dt_sum_1",
+                "quant_sum_0",
+                "quant_sum_1",
+            ]
+
             summary_clients_orders = summary_orders_type.head(1)
             summary_other_orders = summary_orders_type.tail(1)
-            
-            df['all'] = 'all'
+
+            df["all"] = "all"
             summary_all = df.pivot_table(
-                index = 'all',
-                columns='month_id',
-                values=['dt','client_order_number','quant'],
+                index="all",
+                columns="month_id",
+                values=["dt", "client_order_number", "quant"],
                 aggfunc={
-                    'dt':['sum','mean','median','max','min'],
-                    'client_order_number':'nunique',
-                    'quant':'sum'
-                }
+                    "dt": ["sum", "mean", "median", "max", "min"],
+                    "client_order_number": "nunique",
+                    "quant": "sum",
+                },
             ).fillna(0)
             summary_all.columns = [
                 f"{val}_{func}_{month}" for val, func, month in summary_all.columns
             ]
 
             summary_all = summary_all.reset_index(drop=True)
-            
-            n_month = df['month_id'].unique().tolist()
+
+            n_month = df["month_id"].unique().tolist()
             comp = True
             if len(n_month) > 1:
-               comp = True
+                comp = True
             else:
-                comp = False             
-            
-            
-            l = ['client_order_number_nunique_0', 'client_order_number_nunique_1', 'dt_max_0', 'dt_max_1', 'dt_mean_0', 'dt_mean_1', 'dt_median_0', 'dt_median_1', 'dt_min_0', 'dt_min_1', 'dt_sum_0', 'dt_sum_1', 'quant_sum_0', 'quant_sum_1']
-            
-            
-            tot_orders = summary_all['client_order_number_nunique_1'].sum() if comp else summary_all['client_order_number_nunique_0'].sum()
-            tot_orders_last = summary_all['client_order_number_nunique_0'].sum() if comp else None
-            tot_orders_change = (tot_orders-tot_orders_last)/tot_orders_last * 100 if tot_orders_last else None
+                comp = False
+
+            l = [
+                "client_order_number_nunique_0",
+                "client_order_number_nunique_1",
+                "dt_max_0",
+                "dt_max_1",
+                "dt_mean_0",
+                "dt_mean_1",
+                "dt_median_0",
+                "dt_median_1",
+                "dt_min_0",
+                "dt_min_1",
+                "dt_sum_0",
+                "dt_sum_1",
+                "quant_sum_0",
+                "quant_sum_1",
+            ]
+
+            tot_orders = (
+                summary_all["client_order_number_nunique_1"].sum()
+                if comp
+                else summary_all["client_order_number_nunique_0"].sum()
+            )
+            tot_orders_last = (
+                summary_all["client_order_number_nunique_0"].sum() if comp else None
+            )
+            tot_orders_change = (
+                (tot_orders - tot_orders_last) / tot_orders_last * 100
+                if tot_orders_last
+                else None
+            )
             if tot_orders_change:
-               if tot_orders_change > 0:
-                  tot_orders_change = f"*(📈 рост на {tot_orders_change:,.1f}% по сравнению с предыдущем месяцем)*"
-               else:
-                  tot_orders_change = f"*(📉 падение на {abs(tot_orders_change):,.1f}% по сравнению с предыдущем месяцем)*"   
+                if tot_orders_change > 0:
+                    tot_orders_change = f"*(📈 рост на {tot_orders_change:,.1f}% по сравнению с предыдущем месяцем)*"
+                else:
+                    tot_orders_change = f"*(📉 падение на {abs(tot_orders_change):,.1f}% по сравнению с предыдущем месяцем)*"
             else:
-                tot_orders_change = ''
-            
-            
-            clients_orders = summary_clients_orders['client_order_number_nunique_1'].sum() if comp else summary_clients_orders['client_order_number_nunique_0'].sum()
-            clients_orders_last = summary_clients_orders['client_order_number_nunique_0'].sum() if comp else None
-            
-            clients_orders_change = (clients_orders-clients_orders_last) if clients_orders_last else None
+                tot_orders_change = ""
+
+            clients_orders = (
+                summary_clients_orders["client_order_number_nunique_1"].sum()
+                if comp
+                else summary_clients_orders["client_order_number_nunique_0"].sum()
+            )
+            clients_orders_last = (
+                summary_clients_orders["client_order_number_nunique_0"].sum()
+                if comp
+                else None
+            )
+
+            clients_orders_change = (
+                (clients_orders - clients_orders_last) if clients_orders_last else None
+            )
             if clients_orders_change:
-               if clients_orders_change > 0:
-                  clients_orders_change = f"*(+ {clients_orders_change:,.0f} зак. {vs})*"
-               else:
-                  clients_orders_change = f"*(- {abs(clients_orders_change):,.0f} зак. {vs})*"   
+                if clients_orders_change > 0:
+                    clients_orders_change = (
+                        f"*(+ {clients_orders_change:,.0f} зак. {vs})*"
+                    )
+                else:
+                    clients_orders_change = (
+                        f"*(- {abs(clients_orders_change):,.0f} зак. {vs})*"
+                    )
             else:
-                clients_orders_change = ''
-            
-                       
-            other_orders = summary_other_orders['client_order_number_nunique_1'].sum() if comp else summary_other_orders['client_order_number_nunique_0'].sum()
-            other_orders_last = summary_other_orders['client_order_number_nunique_0'].sum() if comp else None
-            
-            
-            other_orders_change = (other_orders-other_orders_last) if other_orders_last else None
+                clients_orders_change = ""
+
+            other_orders = (
+                summary_other_orders["client_order_number_nunique_1"].sum()
+                if comp
+                else summary_other_orders["client_order_number_nunique_0"].sum()
+            )
+            other_orders_last = (
+                summary_other_orders["client_order_number_nunique_0"].sum()
+                if comp
+                else None
+            )
+
+            other_orders_change = (
+                (other_orders - other_orders_last) if other_orders_last else None
+            )
             if other_orders_change:
-               if other_orders_change > 0:
-                  other_orders_change = f"*(+ {other_orders_change:,.0f} зак. {vs})*"
-               else:
-                  other_orders_change = f"*(- {abs(other_orders_change):,.0f} зак. {vs})*"   
+                if other_orders_change > 0:
+                    other_orders_change = f"*(+ {other_orders_change:,.0f} зак. {vs})*"
+                else:
+                    other_orders_change = (
+                        f"*(- {abs(other_orders_change):,.0f} зак. {vs})*"
+                    )
             else:
-                other_orders_change = ''
-                
-                
-            av_check_tot = summary_all['dt_mean_1'].sum() if comp else summary_all['dt_mean_0'].sum()
-            av_check_tot_last = summary_all['dt_mean_0'].sum() if comp else None
-            av_check_tot_change = (av_check_tot-av_check_tot_last)/av_check_tot_last * 100 if av_check_tot_last else None
+                other_orders_change = ""
+
+            av_check_tot = (
+                summary_all["dt_mean_1"].sum()
+                if comp
+                else summary_all["dt_mean_0"].sum()
+            )
+            av_check_tot_last = summary_all["dt_mean_0"].sum() if comp else None
+            av_check_tot_change = (
+                (av_check_tot - av_check_tot_last) / av_check_tot_last * 100
+                if av_check_tot_last
+                else None
+            )
             if av_check_tot_change:
-               if av_check_tot_change > 0:
-                  av_check_tot_change = f"*(📈 рост на {av_check_tot_change:,.1f}% по сравнению с предыдущем месяцем)*"
-               else:
-                  av_check_tot_change = f"*(📉 падение на {abs(av_check_tot_change):,.1f}% по сравнению с предыдущем месяцем)*"   
+                if av_check_tot_change > 0:
+                    av_check_tot_change = f"*(📈 рост на {av_check_tot_change:,.1f}% по сравнению с предыдущем месяцем)*"
+                else:
+                    av_check_tot_change = f"*(📉 падение на {abs(av_check_tot_change):,.1f}% по сравнению с предыдущем месяцем)*"
             else:
-                av_check_tot_change = ''
-            
-            
-            clients_orders_check = summary_clients_orders['dt_mean_1'].sum() if comp else summary_clients_orders['dt_mean_0'].sum()
-            clients_order_check_last = summary_clients_orders['dt_mean_0'].sum() if comp else None
-            
-            clients_orders_check_change = (clients_orders_check-clients_order_check_last) if clients_order_check_last else None
+                av_check_tot_change = ""
+
+            clients_orders_check = (
+                summary_clients_orders["dt_mean_1"].sum()
+                if comp
+                else summary_clients_orders["dt_mean_0"].sum()
+            )
+            clients_order_check_last = (
+                summary_clients_orders["dt_mean_0"].sum() if comp else None
+            )
+
+            clients_orders_check_change = (
+                (clients_orders_check - clients_order_check_last)
+                if clients_order_check_last
+                else None
+            )
             if clients_orders_check_change:
-               if clients_orders_check_change > 0:
-                  clients_orders_check_change = f"*(+ {clients_orders_check_change:,.0f} руб. {vs})*"
-               else:
-                  clients_orders_check_change = f"*(- {abs(clients_orders_check_change):,.0f} руб. {vs})*"   
+                if clients_orders_check_change > 0:
+                    clients_orders_check_change = (
+                        f"*(+ {clients_orders_check_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    clients_orders_check_change = (
+                        f"*(- {abs(clients_orders_check_change):,.0f} руб. {vs})*"
+                    )
             else:
-                clients_orders_check_change = ''
-            
-                       
-            other_orders_check = summary_other_orders['dt_mean_1'].sum() if comp else summary_other_orders['dt_mean_0'].sum()
-            other_orders_check_last = summary_other_orders['dt_mean_0'].sum() if comp else None
-                        
-            other_orders_check_change = (other_orders_check-other_orders_check_last) if other_orders_check_last else None
+                clients_orders_check_change = ""
+
+            other_orders_check = (
+                summary_other_orders["dt_mean_1"].sum()
+                if comp
+                else summary_other_orders["dt_mean_0"].sum()
+            )
+            other_orders_check_last = (
+                summary_other_orders["dt_mean_0"].sum() if comp else None
+            )
+
+            other_orders_check_change = (
+                (other_orders_check - other_orders_check_last)
+                if other_orders_check_last
+                else None
+            )
             if other_orders_check_change:
-               if other_orders_check_change > 0:
-                  other_orders_check_change = f"*(+ {other_orders_check_change:,.0f} руб. {vs})*"
-               else:
-                  other_orders_check_change = f"*(- {abs(other_orders_check_change):,.0f} руб. {vs})*"   
+                if other_orders_check_change > 0:
+                    other_orders_check_change = (
+                        f"*(+ {other_orders_check_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    other_orders_check_change = (
+                        f"*(- {abs(other_orders_check_change):,.0f} руб. {vs})*"
+                    )
             else:
-                other_orders_check_change = ''
-            
-            
-            max_check_tot = summary_all['dt_max_1'].sum() if comp else summary_all['dt_max_0'].sum()
-            max_check_tot_last = summary_all['dt_max_0'].sum() if comp else None
-            max_check_tot_change = (max_check_tot-max_check_tot_last) if max_check_tot_last else None
+                other_orders_check_change = ""
+
+            max_check_tot = (
+                summary_all["dt_max_1"].sum() if comp else summary_all["dt_max_0"].sum()
+            )
+            max_check_tot_last = summary_all["dt_max_0"].sum() if comp else None
+            max_check_tot_change = (
+                (max_check_tot - max_check_tot_last) if max_check_tot_last else None
+            )
             if max_check_tot_change:
-               if max_check_tot_change > 0:
-                  max_check_tot_change = f"*(+ {max_check_tot_change:,.0f} руб. {vs})*"
-               else:
-                  max_check_tot_change = f"*(- {abs(max_check_tot_change):,.0f} руб. {vs})*"   
+                if max_check_tot_change > 0:
+                    max_check_tot_change = (
+                        f"*(+ {max_check_tot_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    max_check_tot_change = (
+                        f"*(- {abs(max_check_tot_change):,.0f} руб. {vs})*"
+                    )
             else:
-                max_check_tot_change = ''
-            
-            min_check_tot = summary_all['dt_min_1'].sum() if comp else summary_all['dt_min_0'].sum()
-            min_check_tot_last = summary_all['dt_min_0'].sum() if comp else None
-            min_check_tot_change = (min_check_tot-min_check_tot_last) if min_check_tot_last else None
+                max_check_tot_change = ""
+
+            min_check_tot = (
+                summary_all["dt_min_1"].sum() if comp else summary_all["dt_min_0"].sum()
+            )
+            min_check_tot_last = summary_all["dt_min_0"].sum() if comp else None
+            min_check_tot_change = (
+                (min_check_tot - min_check_tot_last) if min_check_tot_last else None
+            )
             if min_check_tot_change:
-               if min_check_tot_change > 0:
-                  min_check_tot_change = f"*(+ {min_check_tot_change:,.0f} руб. {vs})*"
-               else:
-                  min_check_tot_change = f"*(- {abs(min_check_tot_change):,.0f} руб. {vs})*"   
+                if min_check_tot_change > 0:
+                    min_check_tot_change = (
+                        f"*(+ {min_check_tot_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    min_check_tot_change = (
+                        f"*(- {abs(min_check_tot_change):,.0f} руб. {vs})*"
+                    )
             else:
-                min_check_tot_change = ''
-            
-            
-            
-            madian_check_tot = summary_all['dt_median_1'].sum() if comp else summary_all['dt_median_0'].sum()
-            median_check_tot_last = summary_all['dt_median_0'].sum() if comp else None
-            median_check_tot_change = (madian_check_tot-median_check_tot_last)/median_check_tot_last * 100 if median_check_tot_last else None
+                min_check_tot_change = ""
+
+            madian_check_tot = (
+                summary_all["dt_median_1"].sum()
+                if comp
+                else summary_all["dt_median_0"].sum()
+            )
+            median_check_tot_last = summary_all["dt_median_0"].sum() if comp else None
+            median_check_tot_change = (
+                (madian_check_tot - median_check_tot_last) / median_check_tot_last * 100
+                if median_check_tot_last
+                else None
+            )
             if median_check_tot_change:
-               if median_check_tot_change > 0:
-                  median_check_tot_change = f"*(📈 рост на {median_check_tot_change:,.1f}% по сравнению с предыдущем месяцем)*"
-               else:
-                  median_check_tot_change = f"*(📉 падение на {abs(median_check_tot_change):,.1f}% по сравнению с предыдущем месяцем)*"   
+                if median_check_tot_change > 0:
+                    median_check_tot_change = f"*(📈 рост на {median_check_tot_change:,.1f}% по сравнению с предыдущем месяцем)*"
+                else:
+                    median_check_tot_change = f"*(📉 падение на {abs(median_check_tot_change):,.1f}% по сравнению с предыдущем месяцем)*"
             else:
-                median_check_tot_change = ''
-            
-            
-            clients_orders_check_median = summary_clients_orders['dt_median_1'].sum() if comp else summary_clients_orders['dt_median_0'].sum()
-            clients_order_check_median_last = summary_clients_orders['dt_median_0'].sum() if comp else None
-            
-            clients_orders_check_median_change = (clients_orders_check_median-clients_order_check_median_last) if clients_order_check_median_last else None
+                median_check_tot_change = ""
+
+            clients_orders_check_median = (
+                summary_clients_orders["dt_median_1"].sum()
+                if comp
+                else summary_clients_orders["dt_median_0"].sum()
+            )
+            clients_order_check_median_last = (
+                summary_clients_orders["dt_median_0"].sum() if comp else None
+            )
+
+            clients_orders_check_median_change = (
+                (clients_orders_check_median - clients_order_check_median_last)
+                if clients_order_check_median_last
+                else None
+            )
             if clients_orders_check_median_change:
-               if clients_orders_check_median_change > 0:
-                  clients_orders_check_median_change = f"*(+ {clients_orders_check_median_change:,.0f} руб. {vs})*"
-               else:
-                  clients_orders_check_median_change = f"*(- {abs(clients_orders_check_median_change):,.0f} руб. {vs})*"   
+                if clients_orders_check_median_change > 0:
+                    clients_orders_check_median_change = (
+                        f"*(+ {clients_orders_check_median_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    clients_orders_check_median_change = f"*(- {abs(clients_orders_check_median_change):,.0f} руб. {vs})*"
             else:
-                clients_orders_check_median_change = ''
-            
-                       
-            other_orders_check_median = summary_other_orders['dt_median_1'].sum() if comp else summary_other_orders['dt_median_0'].sum()
-            other_orders_check_median_last = summary_other_orders['dt_median_0'].sum() if comp else None
-                        
-            other_orders_check_median_change = (other_orders_check_median-other_orders_check_median_last) if other_orders_check_median_last else None
+                clients_orders_check_median_change = ""
+
+            other_orders_check_median = (
+                summary_other_orders["dt_median_1"].sum()
+                if comp
+                else summary_other_orders["dt_median_0"].sum()
+            )
+            other_orders_check_median_last = (
+                summary_other_orders["dt_median_0"].sum() if comp else None
+            )
+
+            other_orders_check_median_change = (
+                (other_orders_check_median - other_orders_check_median_last)
+                if other_orders_check_median_last
+                else None
+            )
             if other_orders_check_median_change:
-               if other_orders_check_median_change > 0:
-                  other_orders_check_median_change = f"*(+ {other_orders_check_median_change:,.0f} руб. {vs})*"
-               else:
-                  other_orders_check_median_change = f"*(- {abs(other_orders_check_median_change):,.0f} руб. {vs})*"   
+                if other_orders_check_median_change > 0:
+                    other_orders_check_median_change = (
+                        f"*(+ {other_orders_check_median_change:,.0f} руб. {vs})*"
+                    )
+                else:
+                    other_orders_check_median_change = (
+                        f"*(- {abs(other_orders_check_median_change):,.0f} руб. {vs})*"
+                    )
             else:
-                other_orders_check_median_change = ''
-            
-            
-            
-            
+                other_orders_check_median_change = ""
+
             text_md = f"""
             ### Статистика средних чеков по заказам
             
@@ -414,20 +696,52 @@ class AreaChartModal:
             - медианный чек по заказам клиентов составил {clients_orders_check_median:,.0f} руб. {clients_orders_check_median_change}; 
             - прочим заказам - {other_orders_check_median:,.0f} руб. {other_orders_check_median_change}.
             """
-            
-            
-            return dcc.Markdown(text_md,className="markdown-body")
-           
+
+            return dcc.Markdown(text_md, className="markdown-body")
 
         return dmc.Container(
             children=[
-                dmc.Title(f"Отчет по заказам за период с {min_date.strftime("%-d %B %Y")} по {max_date.strftime("%-d %B %Y")}  ", order=3, c="blue"),
+                dmc.Title(
+                    f"Отчет по заказам за период с {min_date.strftime('%-d %B %Y')} по {max_date.strftime('%-d %B %Y')}  ",
+                    order=3,
+                    c="blue",
+                ),
                 memo(),
-                check_distibution_chart(),
+                check_distibution_chart(),                
+                dmc.Container(
+                    children=dmc.Text(
+                        "кликните на график что бы увидеть детали", size="sm", c='grape'
+                    ),
+                    id=self.check_disttibution_ag_id,
+                    fluid=True,
+                ),
+                dmc.Space(h=20),
+                dcc.Markdown('### Изменения средних чеков по магазинам',className="markdown-body"),
+                dmc.Space(h=5),
+                InDevNotice().in_dev_conteines
                 
-            ],
-            fluid=True,
+                    ],
+                    fluid=True,    
+                                    
+                ),
+                
+
+
+    def registered_callacks(self, app):
+        destrib_chart_type = self.check_distiribution_chart_id["type"]
+        destrib_ag_type = self.check_disttibution_ag_id["type"]
+
+        @app.callback(
+            Output({"type": destrib_ag_type, "index": MATCH}, "children"),
+            Input({"type": destrib_chart_type, "index": MATCH}, "clickData"),
+            State("theme_switch", "checked"),
+            prevent_initial_call=True,
         )
+        def update_ag(clickData, checked):
+            rrgrid_className = "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
+            a = self.update_ag(clickData, rrgrid_className)
+
+            return a
 
 
 class Components:
@@ -618,11 +932,12 @@ def layout(df_id=None):
                 dmc.Space(h=20),
                 dmc.Title("Динамика целевых показателей продаж", order=4, c="blue"),
                 dmc.Space(h=10),
-                area_chart,
+                area_chart,                
                 dmc.Space(h=20),
                 dmc.Title("Динамика средних чеков по заказам", order=4, c="blue"),
                 dmc.Space(h=10),
                 av_check_chart,
+                dmc.Text("кликните на график что бы увидеть отчет по заказам за месяц", size="sm", c='grape'),
                 AreaChartModal().make_modal(),
             ]
         )
@@ -672,3 +987,5 @@ def registed_callbacks(app):
         data = AreaChartModal(clickData["eom"]).update_modal()
 
         return not opened, data
+
+    AreaChartModal().registered_callacks(app)

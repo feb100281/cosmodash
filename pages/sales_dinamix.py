@@ -69,7 +69,7 @@ class Components:
 
         # Общий титул и мемо
         self.title = dmc.Title("Анализ динамики продаж", order=1, c="blue")
-        self.memo = dmc.Text("На графиках ниже ...", size="xs")
+        self.memo = dmc.Text("Данный раздел предоставляет аналитику по динамики изменения ключевых метрик.", size="xs")
         
         self.tab_store_id = 'sd_tab_store'
         self.tab_store = dcc.Store(id=self.tab_store_id,storage_type='memory')

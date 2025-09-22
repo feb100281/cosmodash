@@ -31,6 +31,7 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
+from components import NoData, InDevNotice
 
 
 class MainWnidow:
@@ -138,9 +139,9 @@ class MainWnidow:
             dmc.AppShellNavbar(
                 id="navbar",
                 children=[
-                    "Navbar",
-                    dmc.NavLink(label="Резюме", href="/", active='exact'),
-                    dmc.NavLink(label="Динамика", href="/Sales_dimamix", active='exact'),
+                    "Навигация",
+                    dmc.NavLink(label="Резюме", href="/summary", active='exact'),
+                    dmc.NavLink(label="Динамика", href="/", active='exact'),
                     dmc.NavLink(label="Сегменты", href="/Segments", active='exact'),
                     dmc.NavLink(label="Матрица", href="/Matrix", active='exact'),
                     
@@ -198,7 +199,7 @@ class MainWnidow:
         
         @app.callback(
             Output(self.header_logo_id, "children"),
-            # Output("rrag_grid", "className"),
+            #Output({"type":"check_distiribution_ag",'index':MATCH}, "className"),
             # Output("ps_tenant_table", "className"),
             # Output("ps_vacant_table", "className"),
             Input(self.theme_switch_id, "checked"),
@@ -206,8 +207,9 @@ class MainWnidow:
         )
         def theme_switch_change(checked):
             logo = self.logo_dark if checked else self.logo_light
-            # rrgrid_className = "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
-            return logo
+            #rrgrid_className = "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
+            
+            return logo, #rrgrid_className
 
         # 🎯 Добавь фиктивный Output
         app.clientside_callback(
@@ -249,10 +251,10 @@ def main_app():
     MainWnidow().main_page_callbacks(app)
     sd_components().register_callbacks(app)
 
-    dash.register_page("Резюме", path="/", layout=SummaryComponents().layout)
-    dash.register_page("Динамика продаж", path="/Sales_dimamix", layout=sd_components().make_layout())
-    dash.register_page("Сегментный анализ", path="/Segments", layout=html.Div("page 1 subject 1"))
-    dash.register_page("Матрица", path="/Matrix", layout=html.Div("page 1 subject 2"))
+    dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
+    dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
+    dash.register_page("Сегментный анализ", path="/Segments", layout=InDevNotice().in_dev_conteines)
+    dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
 
     app.layout = MainWnidow().page_layout
     

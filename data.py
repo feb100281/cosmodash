@@ -149,6 +149,7 @@ def load_column_dates(column_name, dates):
     series_list = []
     for d in dates_str:
         key = f"mydf:{column_name}:{d}"
+        
         data = r.get(key)
         
         if data:

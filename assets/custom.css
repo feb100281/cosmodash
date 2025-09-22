@@ -88,8 +88,7 @@
 /* Контейнер */
 .markdown-body {
     font-family: "Inter", sans-serif !important;
-    font-size: 14px !important;
-    color: #1a1b1e !important;
+    font-size: 14px !important;    
     line-height: 1.6;
 }
 
