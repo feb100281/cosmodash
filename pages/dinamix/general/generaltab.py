@@ -34,7 +34,7 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice
+from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice
 from data import (
     load_df_from_redis,
     load_columns_dates,
@@ -843,20 +843,19 @@ class Components:
             df.columns = ["_".join(col).strip() for col in df.columns.values]
             df = df.reset_index().sort_values(by="eom")
             df.rename(
-                columns={"dt_median": "Медиана", "dt_max": "Макс", "dt_min": "Мин"},
+                columns={"dt_median": "Медиана", "dt_max": "Макс", "dt_min": "Мин","client_order_number_nunique":"Количество заказов"},
                 inplace=True,
             )
 
-            df["Средний чек"] = df["dt_sum"] / df["client_order_number_nunique"]
+            df["Средний чек"] = df["dt_sum"] / df["Количество заказов"]
             df["eom"] = pd.to_datetime(df["eom"], errors="coerce")
             df["month_name"] = df["eom"].dt.strftime("%b %y").str.capitalize()
 
             data = df.to_dict(orient="records")
-            columns = [col for col in df.columns if col not in ["eom"]]
 
             series = [
-                {"name": "Средний чек", "color": "green.6"},
-                {"name": "Медиана", "color": "blue.6"},
+                {"name": "Средний чек", "color": "green.6",'type':'line'},
+                {"name": "Медиана", "color": "blue.6",'type':'line'},
             ]
 
             selector_vals = {"1": "Средн / Медиана", "2": "Макс/Мин"}
@@ -868,7 +867,7 @@ class Components:
                         options_dict=selector_vals,
                         val="1",
                     ),
-                    dmc.AreaChart(
+                    dmc.CompositeChart(
                         id=self.av_check_chart_id,
                         h=200,
                         dataKey="month_name",
@@ -885,11 +884,31 @@ class Components:
                         valueFormatter={"function": "formatNumberIntl"},
                         # type="stacked",
                         withLegend=True,
-                        legendProps={"verticalAlign": "bottom"},
+                        legendProps={"verticalAlign": "top"},
                         connectNulls=True,
+                        composedChartProps={"syncId": "av_check_total"}
                         # tooltipProps={"content":  {"function": "chartTooltip"}},
                         # type="default",
                     ),
+                    ClickOnNotice(notice='Кликните на график что бы просмотреть отчет по заказам за выбраный месяц').component,
+                    dmc.Text('Количество заказов',size='md'),
+                    dmc.CompositeChart(
+                        h=100,
+                        dataKey="month_name",
+                        data=data,
+                        tooltipAnimationDuration=500,
+                        areaProps={
+                            "isAnimationActive": True,
+                            "animationDuration": 500,
+                            "animationEasing": "ease-in-out",
+                            "animationBegin": 500,
+                        },
+                        withPointLabels=False,
+                        series=[{'name':'Количество заказов',"dataKey": "Количество заказов","color":"red",'type':'bar'}],
+                        composedChartProps={"syncId": "av_check_total"}                       
+                        
+                    )
+                    
                 ]
             )
 
@@ -938,7 +957,6 @@ def layout(df_id=None):
                 dmc.Title("Динамика средних чеков по заказам", order=4, c="blue"),
                 dmc.Space(h=10),
                 av_check_chart,
-                dmc.Text("кликните на график что бы увидеть отчет по заказам за месяц", size="sm", c='grape'),
                 AreaChartModal().make_modal(),
             ],
             fluid=True
@@ -967,13 +985,13 @@ def registed_callbacks(app):
 
         if val == "1":  # пример переключения
             series = [
-                {"name": "Средний чек", "dataKey": "Средний чек", "color": "green.6"},
-                {"name": "Медиана", "dataKey": "Медиана", "color": "blue.6"},
+                {"name": "Средний чек", "dataKey": "Средний чек", "color": "green.6",'type':'line'},
+                {"name": "Медиана", "dataKey": "Медиана", "color": "blue.6",'type':'line'},
             ]
         else:
             series = [
-                {"name": "Макс", "dataKey": "Макс", "color": "green.6"},
-                {"name": "Мин", "dataKey": "Мин", "color": "blue.6"},
+                {"name": "Макс", "dataKey": "Макс", "color": "green.6",'type':'line'},
+                {"name": "Мин", "dataKey": "Мин", "color": "blue.6",'type':'line'},
             ]
 
         return series
