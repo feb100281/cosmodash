@@ -19,3 +19,11 @@ __pycache__/
 .vscode/
 .idea/
 *.swp
+
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.xlsm
+*.xlsb
+*.ods

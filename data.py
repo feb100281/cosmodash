@@ -1,4 +1,4 @@
-#В данный модуле находяться классы обработки данных
+# В данный модуле находяться классы обработки данных
 
 import pickle
 import redis
@@ -12,16 +12,16 @@ load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 # Не забыть поменять на джанго потом
 r = redis.Redis(
-    host=os.getenv("REDIS_HOST"),  
+    host=os.getenv("REDIS_HOST"),
     port=os.getenv("REDIS_PORT"),
     db=os.getenv("REDIS_DB"),
     password=os.getenv("REDIS_PASSWORD"),
-    decode_responses=False
+    decode_responses=False,
 )
 
 
 COLS_DICT = {
-    "date": "Дата",
+    "date": "Дата",  # Дата операции
     "client_order_date": "Дата заказа",
     "client_order_number": "Номер заказа",
     "client_order": "Заказ клиента",
@@ -29,16 +29,16 @@ COLS_DICT = {
     "dt": "Продажи",
     "cr": "Возвраты",
     "amount": "Чистая выручка",
-    "quant_dt": "quant_dt",
-    "quant_cr": "quant_cr",
+    "quant_dt": "quant_dt",  # Количество ед продажи
+    "quant_cr": "quant_cr",  # Количество ед возвраты
     "quant": "Количество",
     "warehouse": "Склад",
     "spec": "Спецификация",
     "fullname": "Номенклатура",
     "imname": "Название в ИМ",
     "article": "Артикл",
-    "onec_cat": "onec_cat",
-    "onec_subcat": "onec_subcat",
+    "onec_cat": "onec_cat",  # Это категория 1С
+    "onec_subcat": "onec_subcat",  # Это подкатегоря 1С
     "init_date": "Дата первого заказа",
     "im_id": "Код товара в ИМ",
     "cat": "Категория",
@@ -58,12 +58,50 @@ COLS_DICT = {
     "agent_name": "Агент",  # report_name
     "manager": "_Менеджер",
     "manager_name": "Менеджер",  # report_name
-    #"eom": "Отчетный период",
+    # "eom": "Отчетный период",
     "month_fmt": "Месяц",
     "quarter_fmt": "Квартал",
     "week_fmt": "_Неделя",  # сокращенная
     "week_fullname": "Неделя",
     "month_id": "month_id",
+    "year":"год",
+    "store_gr_name_dt_ytd":"Продажи YTD",
+    "store_gr_name_cr_ytd": "Возвраты YTD",
+    "store_gr_name_quant_dt_ytd":"Количество проданных товароы YTD",
+    "store_gr_name_quant_cr_ytd":"Количество возвращенных товароы YTD", 
+    "store_gr_name_amount_ytd":'Чистая выручка YTD',
+    "store_gr_name_quant_ytd":"Количество YTD",
+    #Далее в том же духе
+    # "manager_name_dt_ytd",
+    # "manager_name_cr_ytd",
+    # "manager_name_quant_dt_ytd",
+    # "manager_name_quant_cr_ytd",
+    # "manager_name_amount_ytd",
+    # "manager_name_quant_ytd",
+    # "agent_name_dt_ytd",
+    # "agent_name_cr_ytd",
+    # "agent_name_quant_dt_ytd",
+    # "agent_name_quant_cr_ytd",
+    # "agent_name_amount_ytd",
+    # "agent_name_quant_ytd",
+    # "fullname_dt_ytd",
+    # "fullname_cr_ytd",
+    # "fullname_quant_dt_ytd",
+    # "fullname_quant_cr_ytd",
+    # "fullname_amount_ytd",
+    # "fullname_quant_ytd",
+    # "brend_dt_ytd",
+    # "brend_cr_ytd",
+    # "brend_quant_dt_ytd",
+    # "brend_quant_cr_ytd",
+    # "brend_amount_ytd",
+    # "brend_quant_ytd",
+    # "manu_dt_ytd",
+    # "manu_cr_ytd",
+    # "manu_quant_dt_ytd",
+    # "manu_quant_cr_ytd",
+    # "manu_amount_ytd",
+    # "manu_quant_ytd",
 }
 
 COLORS = [
@@ -89,7 +127,90 @@ COLORS = [
     "magenta.6",
 ]
 
-   
+cols = [
+    "date",
+    "client_order_date",
+    "client_order_number",
+    "client_order",
+    "operation",
+    "dt",
+    "cr",
+    "amount",
+    "quant_dt",
+    "quant_cr",
+    "quant",
+    "warehouse",
+    "spec",
+    "item_id",
+    "fullname",
+    "imname",
+    "article",
+    "onec_cat",
+    "onec_subcat",
+    "init_date",
+    "im_id",
+    "cat_id",
+    "cat",
+    "parent_cat_id",
+    "parent_cat",
+    "manu",
+    "manu_origin",
+    "brend",
+    "brend_origin",
+    "subcat_id",
+    "subcat",
+    "store",
+    "chanel",
+    "store_gr_name",
+    "store_region",
+    "agent",
+    "agent_name",
+    "manager",
+    "manager_name",
+    "eom",
+    "month_fmt",
+    "quarter_fmt",
+    "week_fmt",
+    "week_fullname",
+    "month_id",
+    "year",
+    "store_gr_name_dt_ytd",
+    "store_gr_name_cr_ytd",
+    "store_gr_name_quant_dt_ytd",
+    "store_gr_name_quant_cr_ytd",
+    "store_gr_name_amount_ytd",
+    "store_gr_name_quant_ytd",
+    "manager_name_dt_ytd",
+    "manager_name_cr_ytd",
+    "manager_name_quant_dt_ytd",
+    "manager_name_quant_cr_ytd",
+    "manager_name_amount_ytd",
+    "manager_name_quant_ytd",
+    "agent_name_dt_ytd",
+    "agent_name_cr_ytd",
+    "agent_name_quant_dt_ytd",
+    "agent_name_quant_cr_ytd",
+    "agent_name_amount_ytd",
+    "agent_name_quant_ytd",
+    "fullname_dt_ytd",
+    "fullname_cr_ytd",
+    "fullname_quant_dt_ytd",
+    "fullname_quant_cr_ytd",
+    "fullname_amount_ytd",
+    "fullname_quant_ytd",
+    "brend_dt_ytd",
+    "brend_cr_ytd",
+    "brend_quant_dt_ytd",
+    "brend_quant_cr_ytd",
+    "brend_amount_ytd",
+    "brend_quant_ytd",
+    "manu_dt_ytd",
+    "manu_cr_ytd",
+    "manu_quant_dt_ytd",
+    "manu_quant_cr_ytd",
+    "manu_amount_ytd",
+    "manu_quant_ytd",
+]
 
 
 def to_str_date(d):
@@ -98,12 +219,13 @@ def to_str_date(d):
     # datetime.date или pd.Timestamp
     return d.strftime("%Y-%m-%d")
 
+
 def load_column_range(column_name, start_eom, end_eom):
     chunks = pickle.loads(r.get(f"mydf:{column_name}:__chunks__"))
-    
+
     # приводим start/end к строкам
     start_str = to_str_date(start_eom)
-    end_str   = to_str_date(end_eom)
+    end_str = to_str_date(end_eom)
 
     # приводим все chunks к строкам
     chunks_str = [to_str_date(c) for c in chunks]
@@ -116,27 +238,31 @@ def load_column_range(column_name, start_eom, end_eom):
         data = r.get(f"mydf:{column_name}:{chunk}")
         if data:
             series_list.append(pickle.loads(data))
-   
-    if series_list:        
-        return pd.concat(series_list, ignore_index=True)        
+
+    if series_list:
+        return pd.concat(series_list, ignore_index=True)
     else:
         return pd.Series(dtype=object)
 
+
 def load_columns_df(columns, start_eom, end_eom):
     data = {}
-    
+
     for col in columns:
-        data[col] = load_column_range(col, start_eom, end_eom)    
+        data[col] = load_column_range(col, start_eom, end_eom)
     return pd.DataFrame(data)
+
 
 def save_df_to_redis(df, expire_seconds=600):
     df_id = str(uuid.uuid4())
     r.set(df_id, pickle.dumps(df), ex=expire_seconds)
     return df_id
 
-def load_df_from_redis(df_id) -> pd.DataFrame: 
+
+def load_df_from_redis(df_id) -> pd.DataFrame:
     data = r.get(df_id)
     return pickle.loads(data) if data else None
+
 
 def delete_df_from_redis(df_id):
     r.delete(df_id)
@@ -145,19 +271,19 @@ def delete_df_from_redis(df_id):
 def load_column_dates(column_name, dates):
     dates_str = pd.to_datetime(dates, errors="coerce").strftime("%Y-%m-%d").tolist()
 
-    
     series_list = []
     for d in dates_str:
         key = f"mydf:{column_name}:{d}"
-        
+
         data = r.get(key)
-        
+
         if data:
             series_list.append(pickle.loads(data))
     if series_list:
         return pd.concat(series_list, ignore_index=True)
     else:
         return pd.Series(dtype=object)
+
 
 def load_columns_dates(columns, dates):
     """
@@ -169,9 +295,7 @@ def load_columns_dates(columns, dates):
     return pd.DataFrame(data)
 
 
-
-cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat']
-#cols = ['manager','date','amount','store','eom','chanel','cat']
+# cols = ['manager','date','amount','store','eom','chanel','cat']
 
 
 # import time
@@ -198,18 +322,14 @@ cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat
 # print(df)
 
 
-
-
 # df = df_jan_feb.pivot_table(
 #     index='eom',
 #     columns=['chanel','store'],
 #     values='dt',
 #     aggfunc='sum'
-    
+
 # ).reset_index().sort_values(by='eom')
 # # print(df)
-
-
 
 
 # class RedisLoader:
@@ -223,8 +343,6 @@ cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat
 
 # class DataMart:
 #     pass
-    
-
 
 
 # class SalesDynamix:
@@ -262,9 +380,8 @@ cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat
 #             aggfunc='sum'
 #         ).fillna(0).reset_index().sort_values(by='eom')
 #         total_chart['average_check'] = total_chart['amount'] / total_chart['client_order']
-              
-        
-        
+
+
 #         if self.period_filter == "monthly":
 #             if self.month_id_filter:
 #                 if isinstance(self.month_id_filter, list):
@@ -300,7 +417,7 @@ cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat
 # class SegmentAnalisys:
 #     def __init__(self):
 #         self.KEY = 'ia_data'
-    
+
 #     def data(self):
 #         def df_to_nested_dict(df: pd.DataFrame, cols: list[str]) -> dict:
 #             """
@@ -331,18 +448,18 @@ cols = ['date','dt','cr','amount','store','eom','chanel','manager','cat','subcat
 #         def df_to_dmc_tree(df: pd.DataFrame, cols: list[str]) -> list:
 #             nested = df_to_nested_dict(df, cols)
 #             return dict_to_dmc_tree(nested)
-        
-#         df = RedisLoader.load_df(self.KEY)        
+
+#         df = RedisLoader.load_df(self.KEY)
 #         cats_list = ['parent_cat','cat','subcat','fullname']
-#         dff = df[cats_list].drop_duplicates()        
+#         dff = df[cats_list].drop_duplicates()
 #         dff = dff.sort_values(by='parent_cat',ascending=False)
 #         valid_data = df_to_dmc_tree(dff, cats_list)
-        
-#         return df,valid_data
-    
 
-# df = RedisLoader.load_df('segment_analisys_monthly')       
-# print(df['parent_cat'].unique()) 
+#         return df,valid_data
+
+
+# df = RedisLoader.load_df('segment_analisys_monthly')
+# print(df['parent_cat'].unique())
 
 
 # a = SegmentAnalisys()

@@ -35,13 +35,6 @@ import locale
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from components import ValuesRadioGroups, MonthSlider, DATES, NoData
-from data import (
-    load_columns_df,
-    save_df_to_redis,
-    load_df_from_redis,
-    COLORS,
-    COLS_DICT,
-)
 
 COLS = [
     "date",
@@ -49,9 +42,11 @@ COLS = [
     "cr",
     "amount",
     "store",
+    "store_gr_name",
     "eom",
     "chanel",
     "manager",
+    "agent",
     "cat",
     "subcat",
     "client_order",
@@ -175,7 +170,7 @@ class Components:
             tab = 'general' if not recent_tab else recent_tab
             id = store_data["df_id"]
             from pages.dinamix.generaltab import layout as generaltab_layout
-            from pages.dinamix.storetab import layout as storetab_layout
+            from pages.dinamix.stores.main import layout as storetab_layout
             from pages.dinamix.cattab import layout as cattab_layout
             from pages.dinamix.managertab import layout as managertab_layout
 
@@ -213,9 +208,7 @@ class Components:
 
         # Импортируем колбэки из страниц табов
         from pages.dinamix.generaltab import registed_callbacks as gt_callbacks
-        
-        
-        
-        
-
+        from pages.dinamix.stores.main import callbacks  
         gt_callbacks(app)
+        callbacks.register_callbacks(app)
+        

@@ -163,7 +163,7 @@ class AreaChartModal:
             {
             "headerName": "Дата",
             "field": "date",
-            "valueFormatter": {"function": f"d3.timeFormat('%d.%m.%Y')({date_obj})"},
+            "valueFormatter": {"function": "RussianDate(params.value)"}
             },
             {"headerName": "Тип", 
              "field": "orders_type"},
@@ -172,13 +172,14 @@ class AreaChartModal:
             {
             "headerName": "Сумма",
             "field": "dt",
-            "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''" },
+            "valueFormatter": {"function": "RUB(params.value)"}
+            #"valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''" },
             },
             {
                 "headerName": "Коли-во товара",
                 "field": "quant",
                 "valueFormatter": {
-                    "function": "params.value ?  d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') + ' ед' : ''"
+                    "function": "FormatWithUnit(params.value,'ед')"
                 },
             },
             {"headerName": "Манеджер", "field": "manager"},
@@ -939,7 +940,8 @@ def layout(df_id=None):
                 av_check_chart,
                 dmc.Text("кликните на график что бы увидеть отчет по заказам за месяц", size="sm", c='grape'),
                 AreaChartModal().make_modal(),
-            ]
+            ],
+            fluid=True
         )
     except:
         return NoData().component
