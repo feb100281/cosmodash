@@ -223,3 +223,32 @@ def month_str_to_date(s: str) -> str:
         return f"{year:04d}-{month:02d}-01"
     except Exception as e:
         raise ValueError(f"Невозможно распарсить '{s}': {e}")
+    
+
+class ClickOnNotice:
+    def __init__(self,
+                 icon = "gridicons:notice-outline",
+                 color = 'orange',
+                 notice = 'кликните на график что бы увидеть детали',
+                 icon_width = 20):
+        
+        self.color = color
+        self.icon = icon
+        self.notice = notice
+        self.icon_width = icon_width
+    
+    @property
+    def component(self):
+        return dmc.Group(
+            [
+                DashIconify(
+                    icon=self.icon,
+                    color=self.color,
+                    width=self.icon_width
+                ),
+                dmc.Text(f"{self.notice}", c=self.color,size='sm')
+            ]
+            
+        )
+        
+

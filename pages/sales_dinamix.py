@@ -169,10 +169,10 @@ class Components:
         def update_tabs(store_data,recent_tab):
             tab = 'general' if not recent_tab else recent_tab
             id = store_data["df_id"]
-            from pages.dinamix.generaltab import layout as generaltab_layout
+            from pages.dinamix.general.generaltab import layout as generaltab_layout
             from pages.dinamix.stores.main import layout as storetab_layout
-            from pages.dinamix.cattab import layout as cattab_layout
-            from pages.dinamix.managertab import layout as managertab_layout
+            from pages.dinamix.cats.cattab import layout as cattab_layout
+            from pages.dinamix.managers.managertab import layout as managertab_layout
 
             return dmc.Tabs(
                 [
@@ -207,7 +207,7 @@ class Components:
             return val
 
         # Импортируем колбэки из страниц табов
-        from pages.dinamix.generaltab import registed_callbacks as gt_callbacks
+        from pages.dinamix.general.generaltab import registed_callbacks as gt_callbacks
         from pages.dinamix.stores.main import callbacks  
         gt_callbacks(app)
         callbacks.register_callbacks(app)
