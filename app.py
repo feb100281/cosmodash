@@ -31,7 +31,7 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
-from components import NoData, InDevNotice
+from components import NoData, InDevNotice, ClickOnNotice
 
 
 class MainWnidow:
@@ -140,10 +140,30 @@ class MainWnidow:
                 id="navbar",
                 children=[
                     "Навигация",
-                    dmc.NavLink(label="Резюме", href="/summary", active='exact'),
-                    dmc.NavLink(label="Динамика", href="/", active='exact'),
-                    dmc.NavLink(label="Сегменты", href="/Segments", active='exact'),
-                    dmc.NavLink(label="Матрица", href="/Matrix", active='exact'),
+                    dmc.NavLink(label="Резюме", 
+                                description = 'Краткое резюме по продажам',
+                                href="/summary", 
+                                active='exact',
+                                leftSection=DashIconify(icon='fluent-mdl2:total',width=16)
+                                ),
+                    dmc.NavLink(label="Динамика",
+                                description = 'Анализ динамики продаж', 
+                                href="/", 
+                                active='exact',
+                                leftSection=DashIconify(icon='icon-park:positive-dynamics',width=16)
+                                ),
+                    dmc.NavLink(label="Сегменты", 
+                                href="/Segments", 
+                                active='exact',
+                                description = 'Сегментный анализ и аналитика', 
+                                leftSection=DashIconify(icon='fluent-emoji-high-contrast:puzzle-piece',width=16)
+                                ),
+                    dmc.NavLink(label="Матрица", 
+                                href="/Matrix", 
+                                active='exact',
+                                leftSection=DashIconify(icon='mdi:matrix',width=16),
+                                description = 'Анализ ассортиментой матрицы', 
+                                ),
                     
                 ],
                 p="md",
