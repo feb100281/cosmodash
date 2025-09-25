@@ -85,7 +85,7 @@ class Components:
         # lable для хранения дат c учетом последнего обновления
         self.last_update_lb_id = "last_update_lb"
         self.last_update_lb = dcc.Loading(
-            dmc.Text(size="xs", id=self.last_update_lb_id)
+            dmc.Badge(size="md", variant="light", radius="xs", 	color="red", id=self.last_update_lb_id)
         )
 
     def make_layout(self):

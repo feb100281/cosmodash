@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 from dash.exceptions import PreventUpdate
 
-import dash
+
+import dash # вот здесь был пробел
 
 from dash import (
     Dash,
