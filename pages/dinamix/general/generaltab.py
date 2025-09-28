@@ -753,6 +753,9 @@ class Components:
         self.av_check_chart_id = {"type": "gt_av_check_chart", "index": "1"}
         self.check_selector_id = {"type": "selector", "index": "1"}
         self.memo_id = {"type": "memo", "index": "1"}
+        
+        self.dnl_buton_id = {'type':'content_download_button_for_gt','index':'1'}
+        self.dcc_download_id = {'type':'content_download_dcc_for_gt','index':'1'}
 
     def data(self):
         df_id = self.df_id
@@ -936,17 +939,25 @@ class Components:
                 showLabel="Читать далее",
             )
 
-        return update_area_chart(), update_av_check_chart(), memo()
+        def dnl_button():
+            return dmc.Stack(
+                [dmc.Button('загрузить',id=self.dnl_buton_id),
+                dcc.Download(id=self.dcc_download_id)]
+            )
+        
+        
+        return update_area_chart(), update_av_check_chart(), memo(), dnl_button()
 
 
 def layout(df_id=None):
     df_id = df_id if df_id is not None else None
     comp = Components(df_id)
     try:
-        area_chart, av_check_chart, memo = comp.data()
+        area_chart, av_check_chart, memo, dnl_button  = comp.data()
 
         return dmc.Container(
             children=[
+                dnl_button,
                 dmc.Space(h=10),
                 memo,
                 dmc.Space(h=20),
@@ -973,6 +984,8 @@ def registed_callbacks(app):
     av_check_selectir_type = comp.check_selector_id["type"]
     av_check_modal_type = modal.modal_id["type"]
     av_check_modal_text_type = modal.modal_text_id["type"]
+    dnl_button = comp.dnl_buton_id['type']
+    dcc_dnl = comp.dcc_download_id['type']
 
     # График среднего чека
     @app.callback(
@@ -1008,4 +1021,21 @@ def registed_callbacks(app):
 
         return not opened, data
 
+    
+    @app.callback(
+        Output({'type':dcc_dnl,'index':MATCH},'data'),
+        
+        Input({'type':dnl_button,'index':MATCH},'n_clicks'),
+        State('df_store','data'),
+        State('PreviewModal','opened'),
+        prevent_initial_call=True
+        )
+    def get_report(n_clicks,data):
+        from .downloading_content import big_button_click
+        return big_button_click(data['df_id'])
+        
+    
+    
+    
+    
     AreaChartModal().registered_callacks(app)

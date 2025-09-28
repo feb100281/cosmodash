@@ -95,7 +95,7 @@ class StoreAreaChartModal:
             df_current["client_order"] == "<Продажи без заказа>",
             "Прочие",
             "Заказы клиента",
-        )
+        ) 
         
         # просто для примера
         

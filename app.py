@@ -32,7 +32,7 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
 from components import NoData, InDevNotice, ClickOnNotice
-
+from reporting.preview_modal import PreviewModal
 
 class MainWnidow:
     def __init__(self):
@@ -170,11 +170,9 @@ class MainWnidow:
   
             ),
             dmc.AppShellMain([page_container,
-                              html.Div(id="dummy-theme-output", style={"display": "none"}),
-                              # Глобальные сторы что бы не было лишних телодвижений
+                              html.Div(id="dummy-theme-output", style={"display": "none"}),                              
                               sd_components().df_store,
-                                              
-                              
+                              PreviewModal().PreviewModal   
                               ]),
         ],
             header={"height": 60},

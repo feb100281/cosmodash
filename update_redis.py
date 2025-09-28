@@ -45,7 +45,7 @@ r = redis.Redis(
     decode_responses=False
 )
 
-r.flushall()
+
 
 print(SALES_DOMAIN.memory_usage(deep=True).sum() / 1024**2, "MB")
 
