@@ -150,7 +150,7 @@ class MainWnidow:
                                 description = 'Анализ динамики продаж', 
                                 href="/", 
                                 active='exact',
-                                leftSection=DashIconify(icon='icon-park:positive-dynamics',width=16)
+                                leftSection=DashIconify(icon='vaadin:line-bar-chart',width=16)
                                 ),
                     dmc.NavLink(label="Сегменты", 
                                 href="/Segments", 
