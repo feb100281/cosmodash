@@ -78,7 +78,7 @@ class StoresComponents:
         if 'store_region' not in df_data.columns:
             df_data['store_region'] = 'Все регионы'
 
-        # безопасная агрегация
+        # безопасная агрегация 
         def present(cols): return [c for c in cols if c in df_data.columns]
         value_cols = present(['dt','cr','amount','client_order_number','quant','quant_dt','quant_cr'])
         agg = {c: 'sum' for c in value_cols}
@@ -244,13 +244,21 @@ class StoresComponents:
 
         # ---- memo
         def memo():
-            if self.period_label:
-                period_txt = self.period_label
-            else:
-                # fallback: считаем по данным вкладки (как было)
-                min_date = pd.to_datetime(df_eom['eom'].min()).strftime('%d %b %Y')
-                max_date = pd.to_datetime(df_eom['eom'].max()).strftime('%d %b %Y')
-                period_txt = f"{min_date} — {max_date}"
+            # Не нужно здесь
+            # if self.period_label:
+            #     period_txt = self.period_label
+            # else:
+            #     # fallback: считаем по данным вкладки (как было)
+            #     min_date = pd.to_datetime(df_eom['eom'].min()).strftime('%d %b %Y')
+            #     max_date = pd.to_datetime(df_eom['eom'].max()).strftime('%d %b %Y')
+            #     period_txt = f"{min_date} — {max_date}"
+            
+            # Делаем даты
+            min_date_report = pd.to_datetime(df_data['date'].min())
+            min_date_report = min_date_report.strftime('%-d %B %Y')
+            max_date_report = pd.to_datetime(df_data['date'].max())
+            max_date_report = max_date_report.strftime('%-d %B %Y')
+
 
             df_stores = (
                 df_eom.pivot_table(index='store_gr_name', values='dt', aggfunc='sum')
@@ -260,7 +268,14 @@ class StoresComponents:
                 f"- {r['store_gr_name']}: {r['dt']/1_000_000:,.2f} млн рублей \n"
                 for _, r in df_stores.iterrows()
             ])
-            md = f"""## Краткий отчет за период {period_txt}\n\n{l}"""
+            
+            # Markdown проще так делать и без отсупов от края в css markdown-body я вставил text-align: justify; для выравнивания по ширине
+            md = f"""
+## Краткий отчет за период c {min_date_report} по {max_date_report}
+
+{l}
+
+            """
             return dmc.Spoiler(
                 children=dcc.Markdown(md, className='markdown-body'),
                 maxHeight=50, hideLabel='Скрыть', showLabel='Читать далее'
