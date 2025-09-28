@@ -52,6 +52,9 @@ COLS = [
     "client_order",
     "quant",
     "client_order_number",
+    'store_region',
+    'quant_dt',
+    'quant_cr',
 ]
 
 
