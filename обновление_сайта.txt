@@ -1,0 +1,15 @@
+ssh daria@37.46.129.233
+Пароль
+cd cosmodash
+source venv/bin/activate
+
+git pull origin daria (или main что еще любую свою ветку после add commit -m и push)
+
+sudo pkill -f gunicorn
+nohup gunicorn wsgi:server -b 0.0.0.0:8050 > gunicorn.log 2>&1 &
+
+
+
+
+
+!!!! Если нужно обновить редиску не забываем в .env раскоментить серверные настройки
