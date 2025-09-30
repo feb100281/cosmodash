@@ -665,7 +665,7 @@ class StoresComponents:
                 formatter = {"function": "formatNumberIntl"}
                 by = (
                     rdf.groupby(['eom','store_gr_name'])
-                    .agg(amount_sum=('amount','sum'), orders=('orders','sum'))
+                    .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
                     .reset_index()
                 )
                 by['value'] = np.where(by['orders'] > 0, by['amount_sum'] / by['orders'], 0.0)
@@ -676,7 +676,7 @@ class StoresComponents:
                 
                 tot = (
                     rdf.groupby('eom')
-                    .agg(amount_sum=('amount','sum'), orders=('orders','sum'))
+                    .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
                     .reset_index()
                 )
                 tot['Все магазины'] = np.where(tot['orders'] > 0, tot['amount_sum'] / tot['orders'], 0.0)
