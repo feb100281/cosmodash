@@ -110,6 +110,7 @@ class StoresComponents:
         df_data: pd.DataFrame = load_df_from_redis(self.df_id)
         if df_data is None or df_data.empty:
             return
+        df_data['store_region'] = df_data['store_region'].fillna('Регион не указан')
 
         # гарантируем наличие store_region
         if 'store_region' not in df_data.columns:
