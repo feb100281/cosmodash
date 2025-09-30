@@ -58,6 +58,7 @@ class MarkdownBlock(ReportComponent):
 
     def render(self):
         html = markdown.markdown(self.text, extensions=["tables"])
+        html = html.replace('<table>','<table class="table table-hover">')
         return f'<div class="{self.color_class}" {self.id} style="font-size:{self.font_size};">{html}</div>'
 
 class DataTable(ReportComponent):
@@ -141,14 +142,14 @@ class ReportGenerator:
 
 rg = ReportGenerator(
     title='Тестовый отчет',
-    bootswatch_theme='lux'
+    bootswatch_theme='minty'
     
 )
 
 text = """
 # Заголовок 1 уровня
 
-Это пример *текста* для теста отчета. Здесь **можно** писать _любой_ текст, он `нужен` только для ***проверки*** рендеринга Markdown в HTML.
+**Это** пример *текста* для теста отчета. Здесь **можно** писать _любой_ текст, он `нужен` только для **проверки** рендеринга **Markdown в HTML**.
 
 ## Заголовок 2 уровня
 
@@ -178,7 +179,7 @@ text = """
 
 ---
 
-Дополнительный текст для проверки переносов и длинных строк. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+**Дополнительный текст** для проверки *переносов* и длинных строк. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
 
 - Еще один список для проверки:
   - Подпункт А
@@ -192,16 +193,24 @@ text = """
 
 """
 
-para1 = MarkdownBlock(text)
-para2 = MarkdownBlock(text=text,font_size='ns',color_class='text-danger')
+para1 = MarkdownBlock(text,font_size='xs')
+para2 = MarkdownBlock(text=text,font_size='xs',color_class='text-danger')
 
 
 rg.add_component(para1)
 rg.add_component(para2)
 
 
-a = rg.render_report()
-print(a)
-from weasyprint import HTML
+
+
 html_content = rg.render_report()
-HTML(string=html_content, base_url=str(Path(__file__).parent)).write_pdf("test.pdf")
+from weasyprint import HTML
+
+# Сохраняем как файл
+html_file = Path("test.html")
+html_file.write_text(html_content, encoding="utf-8")
+print(f"HTML сохранён: {html_file.resolve()}")
+
+# Дополнительно — сразу делаем PDF
+HTML(string=html_content, base_url=str(html_file.parent)).write_pdf("test.pdf")
+print("PDF сгенерирован: test.pdf")

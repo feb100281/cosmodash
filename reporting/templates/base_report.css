@@ -32,3 +32,16 @@ article {
     margin: 0.5cm 2cm 0.5cm 2cm;
     color: var(--bs-body-color);
 }
+
+.table th,
+.table td {
+    text-align: center;
+    vertical-align: middle; /* чтобы текст был по центру по вертикали */
+    padding: 4px 8px;       /* уменьшаем внутренние отступы */
+    font-size: 11pt;        /* можно чуть уменьшить текст */
+}
+
+/* Чтобы заголовок тоже был пониже */
+.table thead th {
+    padding: 6px 8px;
+}
