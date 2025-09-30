@@ -3,6 +3,7 @@
 import pandas as pd
 import numpy as np
 from dash.exceptions import PreventUpdate
+from decimal import Decimal, ROUND_HALF_UP
 
 import dash
 from dash import (
@@ -41,6 +42,43 @@ def layout(df_id: str, period_label: str | None = None):
     return StoresComponents(df_id=df_id, period_label=period_label).tab_layout()
 
 
+def fmt_abs(val, kind):
+                # kind: 'mln' (деньги в млн ₽) | 'int' (целое) | 'rub' (в ₽ с разделителями)
+                if kind == 'mln':
+                    v = Decimal(val) / Decimal('1000000')
+                    v = v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    return f"{v:,.2f} млн ₽"
+                if kind == 'rub':
+                    v = Decimal(val).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    s = f"{v:,.2f}"
+                    return s.replace(",", "X").replace(".", ",").replace("X", "\u202F") + " ₽"
+                # int
+                try:
+                    return f"{int(round(val)):,}".replace(",", "\u202F")
+                except:
+                    return "0"
+
+def delta_node(curr, prev, good_when_up=True, as_pct=True, w=110, ta="left", kind_abs='mln'):
+    import math, pandas as pd
+    if prev in (None, 0) or pd.isna(prev) or math.isclose(prev, 0.0):
+        return dmc.Text("—", c="gray", ta=ta, w=w, ff="tabular-nums")
+
+    diff = curr - prev
+    is_up_good = (diff > 0) if good_when_up else (diff < 0)
+    arrow_char = "▲" if diff > 0 else ("▼" if diff < 0 else "■")
+    color = "green" if is_up_good else ("red" if diff != 0 else "gray")
+
+    if as_pct:
+        val = (diff / prev) * 100.0
+        # округлим «по-человечески», без хвостов
+        txt = f"{abs(Decimal(val).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP))}%"
+    else:
+        # формат в зависимости от метрики
+        txt = fmt_abs(abs(diff), kind_abs)
+
+    return dmc.Text(f"{arrow_char} {txt}", c=color, ta=ta, w=w, ff="tabular-nums")
+
+
 
 class StoresComponents:
     def __init__(self, df_id=None, period_label: str | None = None):
@@ -73,40 +111,84 @@ class StoresComponents:
         if df_data is None or df_data.empty:
             return
 
-
         # гарантируем наличие store_region
         if 'store_region' not in df_data.columns:
             df_data['store_region'] = 'Все регионы'
 
-        # безопасная агрегация 
-        def present(cols): return [c for c in cols if c in df_data.columns]
-        value_cols = present(['dt','cr','amount','client_order_number','quant','quant_dt','quant_cr'])
-        agg = {c: 'sum' for c in value_cols}
-        if 'client_order_number' in value_cols:
-            agg['client_order_number'] = 'nunique'
+        # ======= ЗАКАЗЫ: считаем строго как в av_check =========
+        # берём только нужные поля и убираем NaN в ключевых колонках
+        df_store_checks = df_data[['eom','store_gr_name','dt','client_order_number']].dropna(
+            subset=['eom','store_gr_name','dt','client_order_number']
+        )
+        # 1) сумма каждого чека по магазину и месяцу
+        df_stores_checks_agg = (
+            df_store_checks
+            .groupby(['eom','store_gr_name','client_order_number'], as_index=False)['dt']
+            .sum()
+        )
+        # 2) убираем нулевые чеки
+        df_stores_checks_agg = df_stores_checks_agg[df_stores_checks_agg['dt'] != 0]
 
+        # 3) агрегаты по магазинам: число заказов и сумма "живых" чеков (может пригодиться)
+        df_stores_checks_analytics = (
+            df_stores_checks_agg
+            .groupby(['eom','store_gr_name'], as_index=False)
+            .agg(orders=('client_order_number','nunique'),
+                orders_amount=('dt','sum'))
+        )
+        # при желании можно посчитать средний чек по магазину:
+        df_stores_checks_analytics['av_check'] = np.where(
+            df_stores_checks_analytics['orders'] > 0,
+            df_stores_checks_analytics['orders_amount'] / df_stores_checks_analytics['orders'],
+            0.0
+        )
+
+        # ======= БАЗОВЫЕ СУММЫ ПО МЕТРИКАМ =======
+        def present(cols): 
+            return [c for c in cols if c in df_data.columns]
+
+        value_cols = present(['dt','cr','amount','quant','quant_dt','quant_cr'])
         df_eom = (
             df_data.pivot_table(
                 index=['eom','store_gr_name','chanel','store_region'],
-                values=value_cols, aggfunc=agg
+                values=value_cols,
+                aggfunc='sum'
             )
             .fillna(0).reset_index().sort_values('eom')
         )
-        
 
+        # мержим корректные заказы и средний чек
+        df_eom = df_eom.merge(
+            df_stores_checks_analytics[['eom','store_gr_name','orders','av_check']],
+            on=['eom','store_gr_name'], how='left'
+        )
+        df_eom['orders']   = df_eom['orders'].fillna(0).astype(int)
+        df_eom['av_check'] = df_eom['av_check'].fillna(0.0)
+
+        # фильтры
         df_filters = df_eom[['store_gr_name','chanel','store_region']].drop_duplicates()
 
         # ---- stores
         def store_filters():
-            return dcc.Store(id=self.filters_data_store_id, data=df_filters.to_dict('records'), storage_type='memory')
+            return dcc.Store(
+                id=self.filters_data_store_id,
+                data=df_filters.to_dict('records'),
+                storage_type='memory'
+            )
 
         def store_raw():
-            wanted = ['eom','store_gr_name','chanel','store_region','amount','dt','cr','quant','quant_dt','quant_cr']
+            wanted = ['eom','store_gr_name','chanel','store_region',
+                    'amount','dt','cr','quant','quant_dt','quant_cr',
+                    'orders','av_check']
             tmp = df_eom.copy()
             for c in wanted:
                 if c not in tmp.columns:
                     tmp[c] = 0
-            return dcc.Store(id=self.raw_eom_store_id, data=tmp[wanted].to_dict('records'), storage_type='memory')
+            return dcc.Store(
+                id=self.raw_eom_store_id,
+                data=tmp[wanted].to_dict('records'),
+                storage_type='memory'
+            )
 
         # ---- right drawer (отчёт)
         def report_drawer():
@@ -120,7 +202,7 @@ class StoresComponents:
                 children=html.Div()  # наполняем колбэком
             )
 
-        # ---- sidebar / controls
+        # ---- sidebar / controls (как у тебя было)
         def controls():
             return dmc.Card(
                 withBorder=True, shadow="xs", radius=0, p="md",
@@ -132,12 +214,11 @@ class StoresComponents:
                                 gap="sm", align="center",
                                 children=[
                                     dmc.ThemeIcon(radius=0, size="lg", variant="transparent",
-                                                  children=DashIconify(icon="tabler:adjustments-alt")),
+                                                children=DashIconify(icon="tabler:adjustments-alt")),
                                     dmc.Text("Панель настроек", fw=700),
-    
                                 ],
                             ),
-                           dmc.Group(
+                            dmc.Group(
                                 gap="xs",
                                 children=[
                                     dmc.Tooltip(label="Сбросить фильтры", withArrow=True),
@@ -154,11 +235,9 @@ class StoresComponents:
                                     ),
                                 ],
                             ),
-
                         ],
                     ),
                     dmc.Divider(variant="dashed", my=10),
-
                     dmc.Stack(gap="sm", children=[
                         dmc.MultiSelect(
                             id=self.chanel_multyselect_id, label="Канал", placeholder="Выберите канал",
@@ -181,18 +260,19 @@ class StoresComponents:
                         dmc.SegmentedControl(
                             id=self.metric_segment_id,
                             data=[
-                                seg_item("tabler:chart-line",     "Выручка",            "amount",      "#4cafef"),   # голубой
-                                seg_item("tabler:cash-banknote", "Возвраты ₽",         "ret_amt_abs", "#e53935"),   # красный
-                                seg_item("tabler:package",       "Возвраты шт",        "ret_qty_abs", "#ff9800"),   # оранжевый
-                                seg_item("tabler:arrow-back-up", "Коэф. возвратов, %", "ret_coef",    "#9c27b0"),   # фиолетовый
+                                seg_item("tabler:chart-line",       "Выручка",            "amount"),   
+                                seg_item("tabler:cash-banknote",    "Возвраты ₽",         "ret_amt_abs"),   
+                                seg_item("tabler:box-seam",         "Возвраты шт",        "ret_qty_abs"),  
+                                seg_item("tabler:arrows-left-right","Коэф. возвратов, %", "ret_coef"),   
+                                seg_item("tabler:shopping-cart",    "Кол-во заказов",     "count_order"), 
+                                seg_item("tabler:credit-card",      "Средний чек",        "avr_recept"),  
                             ],
                             value="amount",
                             radius="sm",
                             fullWidth=True,
                             orientation="vertical",
-                            color = 'blue'
+                            color="blue",
                         ),
-
                         dmc.Divider(variant="dashed", my=10),
                         dmc.Switch(
                             id={"type": "st_switch_legend", "index": "1"},
@@ -206,11 +286,10 @@ class StoresComponents:
                 ],
             )
 
-        # ---- main chart with default "Все магазины"
+        # ---- main chart (как у тебя было)
         def chart():
-            # подготовим базовый dataset (выручка)
             df = df_eom.pivot_table(index='eom', columns='store_gr_name', values='amount', aggfunc='sum') \
-                       .fillna(0).reset_index().sort_values('eom')
+                    .fillna(0).reset_index().sort_values('eom')
             df["eom"] = pd.to_datetime(df["eom"], errors="coerce")
             df["month_name"] = df["eom"].dt.strftime("%b\u202F%y").str.capitalize()
             store_cols = [c for c in df.columns if c not in ["eom","month_name"]]
@@ -242,45 +321,194 @@ class StoresComponents:
                 dcc.Store(id=self.chart_series_store_id, data=series_full, storage_type='memory'),
             ])
 
-        # ---- memo
+       
+
         def memo():
-            # Не нужно здесь
-            # if self.period_label:
-            #     period_txt = self.period_label
-            # else:
-            #     # fallback: считаем по данным вкладки (как было)
-            #     min_date = pd.to_datetime(df_eom['eom'].min()).strftime('%d %b %Y')
-            #     max_date = pd.to_datetime(df_eom['eom'].max()).strftime('%d %b %Y')
-            #     period_txt = f"{min_date} — {max_date}"
+            # ===== период вида "01 МАР 24 - 29 СЕН 25" =====
+            MONTHS_RU_3 = ["ЯНВ","ФЕВ","МАР","АПР","МАЙ","ИЮН","ИЮЛ","АВГ","СЕН","ОКТ","НОЯ","ДЕК"]
+            def fmt_dd_MMM_yy(d):
+                if d is None or pd.isna(d): return ""
+                d = pd.to_datetime(d)
+                return f"{d.day:02d} {MONTHS_RU_3[d.month-1]} {d.strftime('%y')}"
+
+            d_min = pd.to_datetime(df_data['date'].min(), errors='coerce')
+            d_max = pd.to_datetime(df_data['date'].max(), errors='coerce')
+            period_text = f"{fmt_dd_MMM_yy(d_min)} - {fmt_dd_MMM_yy(d_max)}"
+
+            # --- агрегаты на стартовый рендер (base=period, delta=%) ---
+            total_sales   = float(df_data['dt'].sum())
+            total_net     = float(df_data['amount'].sum())
+            total_returns = float(df_data['cr'].sum())
+            total_orders  = int(df_eom['orders'].sum()) if 'orders' in df_eom.columns else 0
+
+            eom_series = pd.to_datetime(df_eom['eom'], errors='coerce')
+            first_eom, last_eom = eom_series.min(), eom_series.max()
+
+            def _fmt_mln(x): 
+                try: return f"{x/1_000_000:,.2f} млн ₽"
+                except: return "0,00 млн ₽"
+            def _fmt_int(x):
+                try: return f"{int(x):,}".replace(",", "\u202F")
+                except: return "0"
+
+            def sum_at(col, eom):
+                if col not in df_eom.columns or pd.isna(eom): return 0.0
+                m = pd.to_datetime(df_eom['eom']) == eom
+                return float(df_eom.loc[m, col].sum())
+
+            first_amount, last_amount = sum_at('amount', first_eom), sum_at('amount', last_eom)
+            first_dt,     last_dt     = sum_at('dt', first_eom),     sum_at('dt', last_eom)
+            first_cr,     last_cr     = sum_at('cr', first_eom),     sum_at('cr', last_eom)
+            first_ord,    last_ord    = sum_at('orders', first_eom), sum_at('orders', last_eom)
+
             
-            # Делаем даты
-            min_date_report = pd.to_datetime(df_data['date'].min())
-            min_date_report = min_date_report.strftime('%-d %B %Y')
-            max_date_report = pd.to_datetime(df_data['date'].max())
-            max_date_report = max_date_report.strftime('%-d %B %Y')
+            def metric_row(label, value_text, delta):
+                return dmc.Group(
+                    gap="sm", align="center",
+                    children=[
+                        dmc.Text(f"{label}:", w=180, ta="left"),
+                        dmc.Text(value_text, fw=700, w=140, ta="right", ff="tabular-nums"),
+                        delta
+                    ]
+                )
 
-
-            df_stores = (
-                df_eom.pivot_table(index='store_gr_name', values='dt', aggfunc='sum')
-                .fillna(0).reset_index().sort_values(by='dt', ascending=False)
+            # стартовые строки (base=первый месяц, delta=%)
+            init_list = html.Ul(
+                style={"listStyleType":"disc","margin":0,"paddingLeft":"1.2rem"},
+                children=[
+                    html.Li(metric_row("Чистая выручка", _fmt_mln(total_net),
+                                    delta_node(last_amount, first_amount, True, True))),
+      
+                    html.Li(metric_row("Общие продажи",  _fmt_mln(total_sales),
+                                    delta_node(last_dt, first_dt, True, True))),
+                    html.Li(metric_row("Возвраты",       _fmt_mln(total_returns),
+                                    delta_node(last_cr, first_cr, good_when_up=False, as_pct=True))),
+                    html.Li(metric_row("Кол-во заказов", _fmt_int(total_orders),
+                                    delta_node(last_ord, first_ord, True, True))),
+                ]
             )
-            l = ''.join([
-                f"- {r['store_gr_name']}: {r['dt']/1_000_000:,.2f} млн рублей \n"
-                for _, r in df_stores.iterrows()
-            ])
+
+            # ===== UI =====
+            header = dmc.Group(
+                gap="xs",
+                children=[
+                    dmc.Text(f"Краткий отчёт за период: {period_text}", fw=700),
             
-            # Markdown проще так делать и без отсупов от края в css markdown-body я вставил text-align: justify; для выравнивания по ширине
-            md = f"""
-## Краткий отчет за период c {min_date_report} по {max_date_report}
-
-{l}
-
-            """
-            return dmc.Spoiler(
-                children=dcc.Markdown(md, className='markdown-body'),
-                maxHeight=50, hideLabel='Скрыть', showLabel='Читать далее'
+                ],
             )
-                
+
+            # переключатели сравнения и формата дельты + понятная подпись
+            controls = dmc.Group(
+                gap=10, align="center",
+                children=[
+                    dmc.SegmentedControl(
+                        id={'type': 'sum_base_mode', 'index': '1'},
+                        data=[{"label":"за период","value":"period"},
+                            {"label":"посл. месяц","value":"last_month"}],
+                        value="period", size="xs", radius="sm", color="blue"
+                    ),
+                    dmc.SegmentedControl(
+                        id={'type': 'sum_delta_mode', 'index': '1'},
+                        data=[{"label":"Абс.","value":"abs"},
+                            {"label":"%","value":"pct"}],
+                        value="pct", size="xs", radius="sm", color="blue"
+                    ),
+                    dmc.Badge(id={'type':'sum_caption','index':'1'},
+                   size="md", radius="xs", variant="outline",)
+                ]
+            )
+
+            # блок лидеров (как было у тебя, без дублирования id)
+            df_store_total = (
+                df_eom.groupby('store_gr_name', as_index=False)['dt'].sum()
+                .rename(columns={'dt': 'sum_dt'})
+            )
+            def store_at(eom):
+                m = pd.to_datetime(df_eom['eom']) == eom
+                return (df_eom.loc[m]
+                        .groupby('store_gr_name', as_index=False)['dt'].sum()
+                        .rename(columns={'dt': 'val'}))
+            st_first = store_at(first_eom).rename(columns={'val':'first_dt'})
+            st_last  = store_at(last_eom).rename(columns={'val':'last_dt'})
+            st = (df_store_total.merge(st_first, on='store_gr_name', how='left')
+                                .merge(st_last,  on='store_gr_name', how='left')
+                                .fillna(0.0)
+                                .sort_values('sum_dt', ascending=False))
+            def store_row(rank, name, sum_dt, first_dt_s, last_dt_s):
+                share_pct = float(sum_dt / total_sales * 100) if total_sales else 0.0
+                return dmc.Group(
+                    gap="sm", align="center",
+                    children=[
+                        dmc.Badge(str(rank), variant="filled", color="teal", w=40, ta="center"),
+                        dmc.Text(str(name), w=220, ta="left"),
+                        dmc.Text(_fmt_mln(sum_dt), fw=600, w=140, ta="right"),
+                        
+                        delta_node(last_dt_s, first_dt_s, True, True, w=90),
+                        dmc.Group(align="center", gap=8, children=[
+                            dmc.Progress(value=share_pct, w=180, size="sm", radius="xl"),
+                            dmc.Text(f"{share_pct:.1f}%", w=44, ta="right", c="dimmed", ff="tabular-nums"),
+                        ]),
+                    ]
+                )
+            store_block = dmc.Stack(
+                gap="xs",
+                children=[store_row(i+1, r['store_gr_name'], r['sum_dt'], r['first_dt'], r['last_dt'])
+                        for i, (_, r) in enumerate(st.iterrows())]
+            )
+
+            return dmc.Alert(
+                title=None, color="blue", radius="md", variant="light",
+                children=[
+                    header,
+                    dmc.Divider(variant="dashed", my=8),
+                    controls,
+                    dmc.Divider(variant="dashed", my=8),
+                    dmc.Box(id={'type':'sum_rows','index':'1'}, children=[init_list]),  
+                    dmc.Divider(variant="dashed", my=8),
+                    dmc.Spoiler(
+                       showLabel=dmc.Badge(
+                            "Продажи по магазинам",
+             	        variant="light", color="teal", radius="xs", size="md",
+                          
+                        ),
+                        hideLabel=dmc.Badge(
+                            "Скрыть",
+                        variant="light", color="gray", radius="xs", size="md",
+                            leftSection=DashIconify(icon="tabler:chevron-up")
+                        ),
+                        maxHeight=0, transitionDuration=200,
+                        children=[
+                            dmc.Paper(
+                                withBorder=True, radius="md", p="sm", mt="xs",
+                                children=dmc.Stack(id={'type':'store_block','index':'1'}, gap="xs")
+                            )
+                        ]
+                    )
+                ]
+            )
+
+
+
+
+            
+
+
+
+
+
+        # ---- right drawer
+        def report_drawer():
+            return dmc.Drawer(
+                id=self.report_drawer_id,
+                title="Отчёт",
+                position="right",
+                size=520,
+                padding="md",
+                opened=False,
+                children=html.Div()
+            )
+
+        # вернём все 6 элементов (как ожидает tab_layout)
         return (
             store_filters(),
             store_raw(),
@@ -289,6 +517,7 @@ class StoresComponents:
             report_drawer(),
             memo(),
         )
+
 
     # ======================= LAYOUT =======================
 
@@ -389,6 +618,8 @@ class StoresComponents:
             rdf = pd.DataFrame(raw_eom)
             if L(ch_val): rdf = rdf[rdf['chanel'].isin(L(ch_val))]
             if L(rg_val): rdf = rdf[rdf['store_region'].isin(L(rg_val))]
+            
+            
 
             # --- ветки по метрике
             if metric == 'amount':
@@ -411,6 +642,47 @@ class StoresComponents:
                     rdf.pivot_table(index='eom', columns='store_gr_name', values='quant_cr', aggfunc='sum')
                     .fillna(0).sort_index().reset_index()
                 )
+            
+            elif metric == 'count_order':
+                formatter = {"function": "formatIntl"}  # целые
+                pivot = (
+                    rdf.pivot_table(
+                        index='eom',
+                        columns='store_gr_name',
+                        values='orders',
+                        aggfunc='first'   # <--- не суммируем повторно
+                    )
+                    .fillna(0).sort_index().reset_index()
+                )
+                # «Все магазины» = сумма по магазинам
+                store_cols = [c for c in pivot.columns if c not in ['eom']]
+                pivot['Все магазины'] = pivot[store_cols].sum(axis=1)
+
+
+            elif metric == 'avr_recept':
+                # Средний чек = сумма amount / сумма orders
+                formatter = {"function": "formatNumberIntl"}
+                by = (
+                    rdf.groupby(['eom','store_gr_name'])
+                    .agg(amount_sum=('amount','sum'), orders=('orders','sum'))
+                    .reset_index()
+                )
+                by['value'] = np.where(by['orders'] > 0, by['amount_sum'] / by['orders'], 0.0)
+                pivot = (
+                    by.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
+                    .fillna(0).sort_index().reset_index()
+                )
+                
+                tot = (
+                    rdf.groupby('eom')
+                    .agg(amount_sum=('amount','sum'), orders=('orders','sum'))
+                    .reset_index()
+                )
+                tot['Все магазины'] = np.where(tot['orders'] > 0, tot['amount_sum'] / tot['orders'], 0.0)
+                pivot = pivot.merge(tot[['eom','Все магазины']], on='eom', how='left')
+
+            
+            
 
             else:  # 'ret_coef' — коэффициент возвратов (₽), %
                 formatter = {"function": "formatPercentIntl"}
@@ -598,4 +870,229 @@ class StoresComponents:
         )
         def reset_filters(n_clicks):
             return None, None, None, 'amount'
+        
+        
+        
+        
+        #### ОБНОВЛЕНИЕ САММАРИ
+        @app.callback(
+            Output({'type':'sum_rows','index':MATCH}, 'children'),
+            Output({'type':'sum_caption','index':MATCH}, 'children'),
+            Input({'type':'sum_base_mode','index':MATCH}, 'value'),
+            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),
+            State({'type':'st_raw_eom','index':MATCH}, 'data'),
+            prevent_initial_call=False,
+        )
+        def update_summary_rows(base_mode, delta_mode, raw_eom):
+            import pandas as pd, numpy as np, math
+            rdf = pd.DataFrame(raw_eom or [])
+            if rdf.empty:
+                return dmc.Alert("Нет данных для расчёта KPI", color="gray", variant="light", radius="md"), ""
+
+            # даты
+            rdf['eom'] = pd.to_datetime(rdf['eom'], errors='coerce')
+            rdf = rdf.dropna(subset=['eom'])
+            eoms = np.sort(rdf['eom'].unique())
+            last_eom = eoms[-1] if len(eoms) else None
+            prev_eom = eoms[-2] if len(eoms) >= 2 else None
+            first_eom = eoms[0] if len(eoms) else None
+
+            # форматтеры
+            def _fmt_mln(x): return f"{x/1_000_000:,.2f} млн ₽"
+            def _fmt_int(x):  return f"{int(x):,}".replace(",", "\u202F")
+
+            MONTHS_RU_3 = ["ЯНВ","ФЕВ","МАР","АПР","МАЙ","ИЮН","ИЮЛ","АВГ","СЕН","ОКТ","НОЯ","ДЕК"]
+            def mon_yy(d):
+                if d is None or pd.isna(d): return ""
+                d = pd.to_datetime(d)
+                return f"{MONTHS_RU_3[d.month-1]} {d.strftime('%y')}"
+
+            # агрегаторы
+            def total(col): return float(rdf[col].sum()) if col in rdf.columns else 0.0
+            def at(col, eom):
+                if col not in rdf.columns or eom is None: return 0.0
+                return float(rdf.loc[rdf['eom']==eom, col].sum())
+
+            
+            pairs = [
+                ("Чистая выручка", 'amount', True,  'mln'),  
+                ("Общие продажи",  'dt',     True,  'mln'),
+                ("Возвраты",       'cr',     False, 'mln'),
+                ("Кол-во заказов", 'orders', True,  'int'),  
+            ]
+                        # база сравнения для стрелки
+            base_eom = prev_eom if base_mode == 'last_month' else first_eom
+            def display_value(col):
+                if base_mode == 'last_month':
+                    return at(col, last_eom)  
+                else:
+                    return total(col)        
+            
+            # собираем строки
+            rows = []
+            for label, col, good_up, kind_abs in pairs:
+                val_center = display_value(col)
+                if kind_abs == 'mln':
+                    value_text = _fmt_mln(val_center)
+                else:
+                    value_text = _fmt_int(val_center)
+
+                
+                value_box_children = [dmc.Text(value_text, fw=700, w=140, ta="right", ff="tabular-nums")]
+                
+                curr_for_delta = at(col, last_eom)
+                prev_for_delta = at(col, base_eom)
+                delta_comp = delta_node(curr_for_delta, prev_for_delta,
+                            good_when_up=good_up,
+                            as_pct=(delta_mode=='pct'),
+                            kind_abs=kind_abs)
+
+                rows.append(
+                    html.Li(
+                        dmc.Group(
+                            gap="sm", align="center",
+                            children=[
+                                dmc.Text(f"{label}:", w=180, ta="left"),
+                                dmc.Group(gap=6, align="center", justify="end", w=200, children=value_box_children),
+                                delta_comp,
+                            ]
+                        )
+                    )
+                )
+
+            
+            def fmt_vs(a, b):
+                if a and b:
+                    return f"{a} vs {b}"
+                return a or b or "—"
+
+            if base_mode == 'last_month':
+                main = fmt_vs(mon_yy(last_eom), mon_yy(prev_eom))
+            else:
+                main = fmt_vs(mon_yy(last_eom), mon_yy(first_eom))
+
+            delta_txt = "Δ %" if delta_mode == 'pct' else "Δ абс."
+            cap_text = f"{main} • {delta_txt}"
+
+
+            ul = html.Ul(style={"listStyleType":"disc","margin":0,"paddingLeft":"1.2rem"}, children=rows)
+            return ul, cap_text
+        
+        
+        
+        
+        #### ОБНОВЛЕНИЕ ПРОДАЖ ПО МАГАЗИНАМ
+        @app.callback(
+            Output({'type':'store_block','index':MATCH}, 'children'),
+            Input({'type':'sum_base_mode','index':MATCH}, 'value'),
+            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),
+            State({'type':'st_raw_eom','index':MATCH}, 'data'),
+            prevent_initial_call=False,
+        )
+        def update_store_block(base_mode, delta_mode, raw_eom):
+            import pandas as pd, numpy as np, math
+            rdf = pd.DataFrame(raw_eom or [])
+            if rdf.empty:
+                raise PreventUpdate
+
+            rdf['eom'] = pd.to_datetime(rdf['eom'], errors='coerce')
+            rdf = rdf.dropna(subset=['eom'])
+
+            # опорные месяцы
+            eoms = np.sort(rdf['eom'].unique())
+            last_eom = eoms[-1] if len(eoms) else None
+            prev_eom = eoms[-2] if len(eoms) >= 2 else None
+            first_eom = eoms[0] if len(eoms) else None
+
+            # сумма за весь период по магазину
+            sales_total = rdf.groupby('store_gr_name', as_index=False)['dt'].sum().rename(columns={'dt':'sum_dt'})
+
+            # суммы по месяцам для дельт и "последнего месяца"
+            def sum_at(eom, col='dt', alias='val'):
+                if eom is None:  # безопасно, вернём пустое
+                    out = rdf[['store_gr_name']].drop_duplicates().copy()
+                    out[alias] = 0.0
+                    return out
+                part = rdf.loc[rdf['eom'] == eom]
+                return (part.groupby('store_gr_name', as_index=False)[col].sum()
+                            .rename(columns={col: alias}))
+
+            last_sales  = sum_at(last_eom,  alias='last_dt')
+            prev_sales  = sum_at(prev_eom,  alias='prev_dt')
+            first_sales = sum_at(first_eom, alias='first_dt')
+
+            # сводная таблица
+            st = (sales_total
+                .merge(last_sales,  on='store_gr_name', how='left')
+                .merge(prev_sales,  on='store_gr_name', how='left')
+                .merge(first_sales, on='store_gr_name', how='left')
+                .fillna(0.0))
+
+            # что показываем как "значение" и чем делим для процента доли
+            if base_mode == 'last_month':
+                st['value'] = st['last_dt']                # значение в строке
+                denom = st['last_dt'].sum() or 0.0         # для прогресса
+                prev_for_delta_col = 'prev_dt'             # стрелка: last vs prev
+            else:
+                st['value'] = st['sum_dt']                 # значение в строке
+                denom = st['sum_dt'].sum() or 0.0          # для прогресса
+                prev_for_delta_col = 'first_dt'            # стрелка: last vs first
+
+            st['share'] = np.where(denom > 0, st['value'] / denom * 100.0, 0.0)
+
+            # сортировка по значению (что логичнее визуально)
+            st = st.sort_values('value', ascending=False).reset_index(drop=True)
+
+            # форматтеры
+            def _fmt_mln(x): return f"{x/1_000_000:,.2f} млн ₽"
+
+            from decimal import Decimal, ROUND_HALF_UP
+            def fmt_abs(val):
+                v = (Decimal(val) / Decimal('1000000')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                return f"{v:,.2f} млн ₽"
+
+            def delta_node(curr, prev, good_when_up=True, as_pct=True, w=90, ta="left"):
+                import pandas as pd
+                if prev in (None, 0) or pd.isna(prev) or math.isclose(prev, 0.0):
+                    return dmc.Text("—", c="gray", ta=ta, w=w, ff="tabular-nums")
+                diff = curr - prev
+                is_up_good = (diff > 0) if good_when_up else (diff < 0)
+                arrow = "▲" if diff > 0 else ("▼" if diff < 0 else "■")
+                color = "green" if is_up_good else ("red" if diff != 0 else "gray")
+                if as_pct:
+                    val = Decimal(diff/prev*100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+                    txt = f"{abs(val)}%"
+                else:
+                    txt = fmt_abs(abs(diff))
+                return dmc.Text(f"{arrow} {txt}", c=color, ta=ta, w=w, ff="tabular-nums")
+
+            
+            def store_row(rank, r):
+                return dmc.Group(
+                    gap="sm", align="center",
+                    children=[
+                        dmc.Badge(str(rank), variant="filled", color="teal", w=40, ta="center"),
+                        dmc.Text(str(r['store_gr_name']), w=220, ta="left"),
+                        dmc.Text(_fmt_mln(r['value']), fw=600, w=140, ta="right"),
+                        delta_node(r['last_dt'], r[prev_for_delta_col], True, as_pct=(delta_mode=='pct'), w=90),
+                        dmc.Group(align="center", gap=8, children=[
+                            dmc.Progress(value=float(r['share']), w=180, size="sm", radius="xl"),
+                            dmc.Text(f"{r['share']:.1f}%", w=44, ta="right", c="dimmed", ff="tabular-nums"),
+                        ]),
+                    ]
+                )
+
+            rows = [store_row(i+1, r) for i, r in st.iterrows()]
+            return rows
+
+
+
+        
+        
+        
+        
+        
+
+
+
 
