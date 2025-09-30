@@ -16,10 +16,17 @@ ING_DIR = TEMPLATE_DIR / "img"
 ICONS_DIR = TEMPLATE_DIR / "icons"
 FONT_DIR = TEMPLATE_DIR / "fonts"
 
-FONT_THEME = {
-    'font'
+SIZES = {
+    'xs':'8pt',
+    'sm':'10pt',
+    'ns':'12pt',
+    'lg':'14pt',
+    'xl':'16pt'
 }
 
+from bs import THEMES
+
+THEMS_LIST = ['brite', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'litera', 'lumen', 'lux', 'materia', 'minty', 'morph', 'pulse', 'quartz', 'sandstone', 'simplex', 'slate', 'solar', 'spacelab', 'superhero', 'united', 'vapor', 'yeti', 'zephyr']
 
 
 class ReportComponent:
@@ -27,14 +34,31 @@ class ReportComponent:
         raise NotImplementedError
 
 class MarkdownBlock(ReportComponent):
-    def __init__(self, text, font_size="16px", color_class="text-primary"):
+    def __init__(  self, 
+                    text, 
+                    id_element = None,
+                    font_size: Literal['xs','sm','ns','lg','xl']='ns',                  
+                    color_class: Literal[
+                        "text-primary",
+                        "text-secondary",
+                        "text-success",
+                        "text-danger",
+                        "text-warning",
+                        "text-info",
+                        "text-body",
+                        "text-body-secondary",
+                        "text-body-tertiary",
+                    ] = "text-body"
+                    ):
+                 
         self.text = text
-        self.font_size = font_size
+        self.id = f'id = "{id_element}"' if id_element else ''
+        self.font_size = SIZES[font_size]
         self.color_class = color_class
 
     def render(self):
         html = markdown.markdown(self.text, extensions=["tables"])
-        return f'<div class="{self.color_class}" style="font-size:{self.font_size};">{html}</div>'
+        return f'<div class="{self.color_class}" {self.id} style="font-size:{self.font_size};">{html}</div>'
 
 class DataTable(ReportComponent):
     def __init__(self, df, font_size="14px", table_classes=None):
@@ -60,60 +84,41 @@ class PlotlyFigure(ReportComponent):
         return f'<img src="data:image/{self.format};base64,{b64}" class="{self.css_class}"/>'
     
 class ReportGenerator:
-    def __init__(self, title, template_name="base.html", bootswatch_theme="litera", date=None):
+    def __init__(
+        self, 
+        title, 
+        template_name="base_report.html", 
+        bootswatch_theme: Literal['brite', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'litera', 'lumen', 'lux', 'materia', 'minty', 'morph', 'pulse', 'quartz', 'sandstone', 'simplex', 'slate', 'solar', 'spacelab', 'superhero', 'united', 'vapor', 'yeti', 'zephyr'] = "spacelab", 
+        date=None
+        ):
         self.date = pd.to_datetime(date) if date else pd.Timestamp.today()
         self.date = self.date.strftime("%-d %B %Y")
         self.title = title
         self.template_name = template_name
-        self.bootswatch_theme = bootswatch_theme + ".css"
-
-        self.bs = (BS_PATH / "bootstrap.min.css").resolve().as_uri()
-        self.bw = (BS_PATH / self.bootswatch_theme).resolve().as_uri()
-        self.rs = (BASE_DIR / "styles/report.css").resolve().as_uri()
-        self.ap = ASSETS_PATH
+        self.bootswatch_theme = bootswatch_theme
+        self.bootswatch_theme_link = str(BS_DIR / bootswatch_theme) + ".css"
 
         self.components: list[ReportComponent] = []
 
-        self.env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+        self.env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
         self.template = self.env.get_template(self.template_name)
 
     def add_component(self, component: ReportComponent):
         self.components.append(component)
 
-    def render_report1(self):
+    def render_report(self):
         html_content = "\n".join([c.render() for c in self.components])
         return self.template.render(
-            bs_path=self.bs,
-            bw_path=self.bw,
-            rs_path=self.rs,
+            
             title=self.title,
             date=self.date,
-            ap_path=self.ap,
+            fontface = THEMES[self.bootswatch_theme]['fonts'],
             content=html_content,
-            bootswatch_theme=self.bootswatch_theme,
+            bootswatch_theme=self.bootswatch_theme_link,
         )
 
     # --- Рендер отчета ---
-    def render_report(self):
-        html_content = "\n".join(self.content)
-        html = self.template.render(
-            bs_path = self.bs,
-            bw_path = self.bw,
-            rs_path = self.rs,
-            title=self.title,
-            date=self.date,
-            ap_path = self.ap,
-            content=html_content,
-            bootswatch_theme=self.bootswatch_theme,
-            
-        )
-        return html
-
-    def switch_them(self,theme):
-        self.bootswatch_theme = theme + ".css"
-        self.bw = (BS_PATH / self.bootswatch_theme).resolve().as_uri()
     
-    # --- PDF через WeasyPrint ---
     def to_pdf(self, filename="report.pdf"):
         from weasyprint import HTML
         html = self.render_report1()
@@ -135,24 +140,68 @@ class ReportGenerator:
 
 
 rg = ReportGenerator(
-    "Тестовый отчет"
+    title='Тестовый отчет',
+    bootswatch_theme='lux'
+    
 )
 
 text = """
-### Это параграф основного текста
+# Заголовок 1 уровня
 
-Здесь будем давать комментарии. А, теперь понятно 😅 — проблема в том, что @bottom-center не может выходить за пределы @page, и margin-bottom просто сдвигает контент внутри доступной области, но нижняя граница страницы остаётся нулевой (0cm). То есть нельзя просто "поднять" блок за пределы нижнего края через margin.
+Это пример *текста* для теста отчета. Здесь **можно** писать _любой_ текст, он `нужен` только для ***проверки*** рендеринга Markdown в HTML.
 
-- Нижний отступ страницы **(margin-bottom)** создаёт место, куда @bottom-center может вставиться.
-- В примере 2cm — *это расстояние* от нижнего края страницы до номера.
+## Заголовок 2 уровня
+
+- Пункт списка 1
+- Пункт списка 2
+  - Вложенный ***пункт 2.1***
+  - Вложенный *пункт 2.2*
+- Пункт списка 3
+
+### Заголовок 3 уровня
+
+1. Нумерованный пункт 1
+2. Нумерованный пункт 2
+3. Нумерованный пункт 3
+
+---
+
+## Таблица для теста
+
+| Имя       | Возраст | Город        |
+|-----------|--------|--------------|
+| Иван      | 25     | Москва       |
+| Мария     | 30     | Санкт-Петербург |
+| Алексей   | 22     | Новосибирск  |
+| Ольга     | 28     | Екатеринбург |
+| Сергей    | 35     | Казань       |
+
+---
+
+Дополнительный текст для проверки переносов и длинных строк. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+- Еще один список для проверки:
+  - Подпункт А
+  - Подпункт Б
+  - Подпункт В
+
+---
+
+Заключение: этот текст нужен только для проверки генерации отчета из Markdown в HTML с таблицами, списками и разными заголовками.
 
 
 """
 
-para1 = MarkdownBlock(text,font_size='12px')
+para1 = MarkdownBlock(text)
+para2 = MarkdownBlock(text=text,font_size='ns',color_class='text-danger')
 
 
 rg.add_component(para1)
+rg.add_component(para2)
 
 
-print(rg.render_report1())
+a = rg.render_report()
+print(a)
+from weasyprint import HTML
+html_content = rg.render_report()
+HTML(string=html_content, base_url=str(Path(__file__).parent)).write_pdf("test.pdf")

@@ -155,7 +155,6 @@ def old_data(key="sales_data"):
 
     r.set("last_date", last_date.strftime("%Y-%m-%d"))
     r.set("first_date", first_date.strftime("%Y-%m-%d"))
-    print("old data saved")
 
 old_data()
 
