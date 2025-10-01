@@ -317,6 +317,7 @@ class StoresComponents:
                     valueFormatter={"function": "formatNumberIntl"},
                     withLegend=True, 
                     connectNulls=True,
+                    yAxisProps={"domain": ["dataMin", "auto"]},
                 ),
                 dcc.Store(id=self.chart_data_store_id, data=data, storage_type='memory'),
                 dcc.Store(id=self.chart_series_store_id, data=series_full, storage_type='memory'),
@@ -382,10 +383,11 @@ class StoresComponents:
       
                     html.Li(metric_row("Общие продажи",  _fmt_mln(total_sales),
                                     delta_node(last_dt, first_dt, True, True))),
-                    html.Li(metric_row("Возвраты",       _fmt_mln(total_returns),
-                                    delta_node(last_cr, first_cr, good_when_up=False, as_pct=True))),
+                    
                     html.Li(metric_row("Кол-во заказов", _fmt_int(total_orders),
                                     delta_node(last_ord, first_ord, True, True))),
+                    html.Li(metric_row("Возвраты",       _fmt_mln(total_returns),
+                                    delta_node(last_cr, first_cr, good_when_up=False, as_pct=True))),
                 ]
             )
 
@@ -398,28 +400,89 @@ class StoresComponents:
                 ],
             )
 
-            # переключатели сравнения и формата дельты + понятная подпись
-            controls = dmc.Group(
-                gap=10, align="center",
-                children=[
-                    dmc.SegmentedControl(
-                        id={'type': 'sum_base_mode', 'index': '1'},
-                        data=[{"label":"за период","value":"period"},
-                            {"label":"посл. месяц","value":"last_month"}],
-                        value="period", size="xs", radius="sm", color="blue"
-                    ),
-                    dmc.SegmentedControl(
-                        id={'type': 'sum_delta_mode', 'index': '1'},
-                        data=[{"label":"Абс.","value":"abs"},
-                            {"label":"%","value":"pct"}],
-                        value="pct", size="xs", radius="sm", color="blue"
-                    ),
-                    dmc.Badge(id={'type':'sum_caption','index':'1'},
-                   size="md", radius="xs", variant="outline",)
-                ]
+
+            
+            
+            controls = dmc.Paper(
+                withBorder=True, shadow="xs", radius="sm", p="sm",
+                style={"background": "rgba(0,102,255,0.04)"},
+                children=dmc.Group(
+                    justify="space-between", align="center", gap="sm", wrap="wrap",
+                    children=[
+                        dmc.Group(
+                            gap="md", wrap="wrap",
+                            children=[
+                                # База сравнения (period / last_month / custom)
+                                dmc.Stack(gap=2, w=360, children=[
+                                    dmc.Group(gap=6, align="center", children=[
+                                        DashIconify(icon="tabler:calendar-stats", width=14),
+                                        dmc.Text("База сравнения", size="xs", c="dimmed"),
+                                    ]),
+                                    dmc.SegmentedControl(
+                                        id={'type':'sum_base_mode','index':'1'},
+                                        data=[
+                                            {"label":"за период",   "value":"period"},
+                                            {"label":"посл. месяц", "value":"last_month"},
+                                            {"label":"выбрать…",    "value":"custom"},
+                                        ],
+                                        value="period", size="sm", radius="sm", color="blue", fullWidth=True
+                                    ),
+                                   dmc.Box(
+                                        id={'type':'sum_base_custom_box','index':'1'},
+                                        children=dmc.MonthPickerInput(
+                                            id={'type':'sum_base_custom','index':'1'},
+                                            placeholder="Выберите месяц",
+                                            size="sm",
+                                            value=None,
+                                            clearable=True,
+                                            w="100%"
+                                        ),
+                                        style={"display":"none"}  # показываем только при base_mode=custom
+                                    )
+                                ]),
+
+                                # Формат дельты
+                                dmc.Stack(gap=2, w=170, children=[
+                                    dmc.Group(gap=6, align="center", children=[
+                                        DashIconify(icon="tabler:arrows-diff", width=14),
+                                        dmc.Text("Формат дельты", size="xs", c="dimmed"),
+                                    ]),
+                                    dmc.SegmentedControl(
+                                        id={'type':'sum_delta_mode','index':'1'},
+                                        data=[{"label":"Абс.","value":"abs"},{"label":"%","value":"pct"}],
+                                        value="pct", size="sm", radius="sm", color="blue", fullWidth=True
+                                    ),
+                                ]),
+
+                                # Формат суммы
+                                dmc.Stack(gap=2, w=190, children=[
+                                    dmc.Group(gap=6, align="center", children=[
+                                        DashIconify(icon="tabler:currency-ruble", width=14),
+                                        dmc.Text("Формат суммы", size="xs", c="dimmed"),
+                                    ]),
+                                    dmc.SegmentedControl(
+                                        id={'type':'sum_number_format','index':'1'},
+                                        data=[{"label":"млн ₽","value":"mln"},{"label":"полные ₽","value":"full"}],
+                                        value="mln", size="sm", radius="sm", color="blue", fullWidth=True
+                                    ),
+                                ]),
+                            ],
+                        ),
+
+                        # подпись сравнения справа
+                        dmc.Badge(
+                            id={'type':'sum_caption','index':'1'},
+                            size="md", radius="sm", variant="outline",
+                            style={"whiteSpace":"nowrap"}
+                        ),
+                    ]
+                )
             )
 
-            # блок лидеров (как было у тебя, без дублирования id)
+
+
+
+            
             df_store_total = (
                 df_eom.groupby('store_gr_name', as_index=False)['dt'].sum()
                 .rename(columns={'dt': 'sum_dt'})
@@ -440,13 +503,13 @@ class StoresComponents:
                 return dmc.Group(
                     gap="sm", align="center",
                     children=[
-                        dmc.Badge(str(rank), variant="filled", color="teal", w=40, ta="center"),
+                        dmc.Badge(str(rank), variant="filled", color="teal", w=40, ta="center", radius="xs",),
                         dmc.Text(str(name), w=220, ta="left"),
                         dmc.Text(_fmt_mln(sum_dt), fw=600, w=140, ta="right"),
                         
                         delta_node(last_dt_s, first_dt_s, True, True, w=90),
                         dmc.Group(align="center", gap=8, children=[
-                            dmc.Progress(value=share_pct, w=180, size="sm", radius="xl"),
+                            dmc.Progress(value=share_pct, w=180, size="lg", radius="xs"),
                             dmc.Text(f"{share_pct:.1f}%", w=44, ta="right", c="dimmed", ff="tabular-nums"),
                         ]),
                     ]
@@ -464,7 +527,11 @@ class StoresComponents:
                     dmc.Divider(variant="dashed", my=8),
                     controls,
                     dmc.Divider(variant="dashed", my=8),
-                    dmc.Box(id={'type':'sum_rows','index':'1'}, children=[init_list]),  
+                  dmc.SimpleGrid(
+                            id={'type':'sum_rows','index':'1'},
+                            cols=2, spacing="md",
+                            children=[]  
+                        ),
                     dmc.Divider(variant="dashed", my=8),
                     dmc.Spoiler(
                        showLabel=dmc.Badge(
@@ -843,7 +910,7 @@ class StoresComponents:
             rows = [
                 dmc.Group(justify="space-between", children=[
                     dmc.Text(metric_name, fw=700),
-                    dmc.Badge(scope, radius=0),
+                    dmc.Badge(scope, 	radius="xs",),
                 ]),
                 dmc.Text(f"Последний период: {last_eom.strftime('%b %Y').capitalize()}"),
                 dmc.Text(f"Тек. значение: {last:,.2f}{value_suffix}"),
@@ -875,225 +942,565 @@ class StoresComponents:
         
         
         
-        #### ОБНОВЛЕНИЕ САММАРИ
+        # #### ОБНОВЛЕНИЕ САММАРИ
+        from pandas.tseries.offsets import MonthEnd
+
         @app.callback(
             Output({'type':'sum_rows','index':MATCH}, 'children'),
             Output({'type':'sum_caption','index':MATCH}, 'children'),
-            Input({'type':'sum_base_mode','index':MATCH}, 'value'),
-            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),
+            Input({'type':'sum_base_mode','index':MATCH}, 'value'),      # period | last_month | custom
+            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),     # abs | pct
+            Input({'type':'sum_number_format','index':MATCH}, 'value'),  # mln | full
+            Input({'type':'sum_base_custom','index':MATCH}, 'value'),    # dmc.MonthPickerInput
             State({'type':'st_raw_eom','index':MATCH}, 'data'),
             prevent_initial_call=False,
         )
-        def update_summary_rows(base_mode, delta_mode, raw_eom):
+        def update_summary_rows(base_mode, delta_mode, num_format, base_custom_val, raw_eom):
             import pandas as pd, numpy as np, math
+            from decimal import Decimal, ROUND_HALF_UP
+
             rdf = pd.DataFrame(raw_eom or [])
             if rdf.empty:
-                return dmc.Alert("Нет данных для расчёта KPI", color="gray", variant="light", radius="md"), ""
+                return [dmc.Alert("Нет данных для расчёта KPI", color="gray", variant="light", radius="md")], ""
 
-            # даты
+            # --- даты
             rdf['eom'] = pd.to_datetime(rdf['eom'], errors='coerce')
             rdf = rdf.dropna(subset=['eom'])
             eoms = np.sort(rdf['eom'].unique())
-            last_eom = eoms[-1] if len(eoms) else None
-            prev_eom = eoms[-2] if len(eoms) >= 2 else None
-            first_eom = eoms[0] if len(eoms) else None
+            if len(eoms) == 0:
+                return [dmc.Alert("Нет валидных дат EOM", color="gray", variant="light", radius="md")], ""
 
-            # форматтеры
-            def _fmt_mln(x): return f"{x/1_000_000:,.2f} млн ₽"
-            def _fmt_int(x):  return f"{int(x):,}".replace(",", "\u202F")
+            last_eom, first_eom = eoms[-1], eoms[0]
+            prev_eom = eoms[-2] if len(eoms) >= 2 else None
+
+            # кастом → конец месяца
+            custom_eom = None
+            if base_custom_val:
+                try:
+                    custom_eom = pd.to_datetime(base_custom_val) + MonthEnd(0)
+                except Exception:
+                    custom_eom = None
+
+            # --- форматтеры
+            NBSP = "\u202F"
+            def fmt_money_full(x: float) -> str:
+                try:
+                    return f"{int(round(x)):,}".replace(",", NBSP) + " ₽"
+                except:
+                    return "0 ₽"
+
+            def fmt_money_mln(x: float) -> str:
+                try:
+                    return f"{x/1_000_000:,.2f}".replace(",", " ").replace(".", ",") + " млн ₽"
+                except:
+                    return "0,00 млн ₽"
+
+            def fmt_money(x: float) -> str:
+                return fmt_money_mln(x) if num_format == "mln" else fmt_money_full(x)
+
+            def fmt_int(x: float) -> str:
+                try:
+                    return f"{int(x):,}".replace(",", NBSP)
+                except:
+                    return "0"
 
             MONTHS_RU_3 = ["ЯНВ","ФЕВ","МАР","АПР","МАЙ","ИЮН","ИЮЛ","АВГ","СЕН","ОКТ","НОЯ","ДЕК"]
             def mon_yy(d):
-                if d is None or pd.isna(d): return ""
+                if d is None or pd.isna(d): return "—"
                 d = pd.to_datetime(d)
                 return f"{MONTHS_RU_3[d.month-1]} {d.strftime('%y')}"
 
             # агрегаторы
-            def total(col): return float(rdf[col].sum()) if col in rdf.columns else 0.0
             def at(col, eom):
                 if col not in rdf.columns or eom is None: return 0.0
                 return float(rdf.loc[rdf['eom']==eom, col].sum())
 
-            
-            pairs = [
-                ("Чистая выручка", 'amount', True,  'mln'),  
-                ("Общие продажи",  'dt',     True,  'mln'),
-                ("Возвраты",       'cr',     False, 'mln'),
-                ("Кол-во заказов", 'orders', True,  'int'),  
-            ]
-                        # база сравнения для стрелки
-            base_eom = prev_eom if base_mode == 'last_month' else first_eom
-            def display_value(col):
-                if base_mode == 'last_month':
-                    return at(col, last_eom)  
-                else:
-                    return total(col)        
-            
-            # собираем строки
-            rows = []
-            for label, col, good_up, kind_abs in pairs:
-                val_center = display_value(col)
-                if kind_abs == 'mln':
-                    value_text = _fmt_mln(val_center)
-                else:
-                    value_text = _fmt_int(val_center)
+            # пара для сравнения (current vs base)
+            if base_mode == 'last_month':
+                current_eom, base_eom = last_eom, prev_eom
+            elif base_mode == 'custom' and (custom_eom is not None):
+                current_eom, base_eom = last_eom, custom_eom
+            else:  # period
+                current_eom, base_eom = last_eom, first_eom
 
-                
-                value_box_children = [dmc.Text(value_text, fw=700, w=140, ta="right", ff="tabular-nums")]
-                
-                curr_for_delta = at(col, last_eom)
-                prev_for_delta = at(col, base_eom)
-                delta_comp = delta_node(curr_for_delta, prev_for_delta,
-                            good_when_up=good_up,
-                            as_pct=(delta_mode=='pct'),
-                            kind_abs=kind_abs)
+            # ряды для спарклайнов
+            by_month = (rdf.groupby('eom')[['amount','dt','orders','cr','quant_cr']]
+                        .sum().sort_index())
 
-                rows.append(
-                    html.Li(
-                        dmc.Group(
-                            gap="sm", align="center",
-                            children=[
-                                dmc.Text(f"{label}:", w=180, ta="left"),
-                                dmc.Group(gap=6, align="center", justify="end", w=200, children=value_box_children),
-                                delta_comp,
-                            ]
-                        )
-                    )
+            def series(col):
+                return by_month[col].to_list() if col in by_month.columns else []
+
+            def ratio_series():
+                if not {'cr','dt'}.issubset(by_month.columns): return []
+                g = by_month[['cr','dt']].copy()
+                return (100.0 * g['cr'] / g['dt']).replace([np.inf, -np.inf], 0.0).fillna(0.0).to_list()
+
+            def sval(vals, eom_):
+                if eom_ is None or len(vals) == 0: return None
+                try:
+                    pos = by_month.index.get_loc(eom_)
+                    if isinstance(pos, slice): pos = pos.start or 0
+                    if isinstance(pos, (list, np.ndarray)): pos = int(pos[0]) if len(pos) else 0
+                    return vals[max(0, min(int(pos), len(vals)-1))]
+                except Exception:
+                    return None
+
+            # визуалка
+            def spark_color(curr_val, base_val, good_when_up: bool):
+                if curr_val is None or base_val is None: return "gray"
+                if math.isclose(curr_val, base_val, rel_tol=0.005, abs_tol=1e-9): return "gray"
+                up = curr_val > base_val
+                return "teal" if ((up and good_when_up) or ((not up) and (not good_when_up))) else "red"
+
+            def delta_node(curr, prev, *, good_up=True, pct_mode=True, is_money=False):
+                if prev in (None, 0) or (isinstance(prev, float) and math.isclose(prev, 0.0)):
+                    return dmc.Text("—", c="gray", ff="tabular-nums", fw=700, style={"whiteSpace":"nowrap"})
+                diff = (curr or 0) - (prev or 0)
+                color = "teal" if ((diff > 0 and good_up) or (diff < 0 and not good_up)) else ("red" if diff != 0 else "gray")
+                arrow = "▲" if diff > 0 else ("▼" if diff < 0 else "■")
+                if pct_mode:
+                    val = Decimal(diff/prev*100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+                    txt = f"{arrow} {abs(val)}%"
+                else:
+                    txt = f"{arrow} " + (fmt_money(abs(diff)) if is_money else fmt_int(abs(diff)))
+                return dmc.Text(txt, c=color, ff="tabular-nums", fw=700, style={"whiteSpace":"nowrap"})
+
+            # --- фиксированная мини-сетка для колонок curr/base: [МЕСЯЦ | ЗНАЧЕНИЕ]
+            MONTH_W = 54   # ширина под «СЕН 25», чтобы месяцы стояли строго столбцом
+            GAP = 6
+
+            def pill(text):
+                return dmc.Kbd(text, size="xs", style={"opacity":0.9, "width": f"{MONTH_W}px", "textAlign": "center"})
+
+            def cell_box(children):
+                return dmc.Box(
+                    children=children,
+                    style={
+                        "display": "grid",
+                        "gridTemplateColumns": f"{MONTH_W}px 1fr",
+                        "alignItems": "center",
+                        "columnGap": f"{GAP}px",
+                        "justifyItems": "start",
+                        "whiteSpace": "nowrap",
+                    }
                 )
 
-            
-            def fmt_vs(a, b):
-                if a and b:
-                    return f"{a} vs {b}"
-                return a or b or "—"
+            # ячейки «текущий/база»
+            def cell_money(col, eom_):
+                return cell_box([
+                    pill(mon_yy(eom_)),
+                    dmc.Text(fmt_money(at(col, eom_)), fw=700, ff="tabular-nums"),
+                ])
 
-            if base_mode == 'last_month':
-                main = fmt_vs(mon_yy(last_eom), mon_yy(prev_eom))
-            else:
-                main = fmt_vs(mon_yy(last_eom), mon_yy(first_eom))
+            def cell_int(col, eom_):
+                return cell_box([
+                    pill(mon_yy(eom_)),
+                    dmc.Text(fmt_int(at(col, eom_)), fw=700, ff="tabular-nums"),
+                ])
 
-            delta_txt = "Δ %" if delta_mode == 'pct' else "Δ абс."
-            cap_text = f"{main} • {delta_txt}"
+            def cell_pct(val, eom_):
+                return cell_box([
+                    pill(mon_yy(eom_)),
+                    dmc.Text(f"{val:.1f}%", fw=700, ff="tabular-nums"),
+                ])
+
+            # грид-строка: label(3) | curr(3) | base(3) | delta(2) | spark(1)
+            def metric_row_grid(label, *, curr_cell, base_cell, delta_cell, spark):
+                return html.Li(
+                    dmc.Grid(gutter="xs", align="center", columns=12, children=[
+                        dmc.GridCol(dmc.Text(f"{label}:", c="inherit"), span=3),
+                        dmc.GridCol(curr_cell,  span=3, style={"textAlign": "left"}),
+                        dmc.GridCol(base_cell,  span=3, style={"textAlign": "left"}),
+                        dmc.GridCol(delta_cell, span=2, style={"textAlign": "left"}),
+                        dmc.GridCol(dmc.Box(spark, style={"width": "100%"}), span=1),
+                    ]),
+                    style={"listStyleType": "disc", "margin": 0, "paddingLeft": "1rem"}
+                )
+
+            # спарклайны
+            def spark_for(col, *, good_up=True):
+                vals = series(col)
+                color = spark_color(sval(vals, current_eom), sval(vals, base_eom), good_when_up=good_up)
+                return dmc.Sparkline(data=vals, w="100%", h=24, color=color, fillOpacity=0.5, curveType="Linear", strokeWidth=2)
+
+            # коэффициент возвратов
+            def ratio_eom(eom_):
+                num, den = at('cr', eom_), at('dt', eom_)
+                return (num/den*100.0) if den > 0 else 0.0
+
+            # ПРОДАЖИ
+            sales_rows = [
+                metric_row_grid(
+                    "Чистая выручка",
+                    curr_cell = cell_money('amount', current_eom),
+                    base_cell = cell_money('amount', base_eom),
+                    delta_cell= delta_node(at('amount', current_eom), at('amount', base_eom),
+                                        good_up=True, pct_mode=(delta_mode=='pct'), is_money=True),
+                    spark     = spark_for('amount', good_up=True)
+                ),
+                metric_row_grid(
+                    "Общие продажи",
+                    curr_cell = cell_money('dt', current_eom),
+                    base_cell = cell_money('dt', base_eom),
+                    delta_cell= delta_node(at('dt', current_eom), at('dt', base_eom),
+                                        good_up=True, pct_mode=(delta_mode=='pct'), is_money=True),
+                    spark     = spark_for('dt', good_up=True)
+                ),
+                metric_row_grid(
+                    "Кол-во заказов",
+                    curr_cell = cell_int('orders', current_eom),
+                    base_cell = cell_int('orders', base_eom),
+                    delta_cell= delta_node(at('orders', current_eom), at('orders', base_eom),
+                                        good_up=True, pct_mode=(delta_mode=='pct'), is_money=False),
+                    spark     = spark_for('orders', good_up=True)
+                ),
+            ]
+            left_block = dmc.Stack(gap=6, children=[
+                dmc.Text("Продажи", fw=700, c="dimmed"),
+                html.Ul(style={"margin": 0, "paddingLeft": "1rem"}, children=sales_rows)
+            ])
+
+            # ВОЗВРАТЫ
+            returns_rows = [
+                metric_row_grid(
+                    "Возвраты ₽",
+                    curr_cell = cell_money('cr', current_eom),
+                    base_cell = cell_money('cr', base_eom),
+                    delta_cell= delta_node(at('cr', current_eom), at('cr', base_eom),
+                                        good_up=False, pct_mode=(delta_mode=='pct'), is_money=True),
+                    spark     = spark_for('cr', good_up=False)
+                ),
+                metric_row_grid(
+                    "Возвраты шт",
+                    curr_cell = cell_int('quant_cr', current_eom),
+                    base_cell = cell_int('quant_cr', base_eom),
+                    delta_cell= delta_node(at('quant_cr', current_eom), at('quant_cr', base_eom),
+                                        good_up=False, pct_mode=(delta_mode=='pct'), is_money=False),
+                    spark     = spark_for('quant_cr', good_up=False)
+                ),
+                metric_row_grid(
+                    "Коэф. возвратов",
+                    curr_cell = cell_pct(ratio_eom(current_eom), current_eom),
+                    base_cell = cell_pct(ratio_eom(base_eom),    base_eom),
+                    delta_cell= delta_node(ratio_eom(current_eom), ratio_eom(base_eom),
+                                        good_up=False, pct_mode=True, is_money=False),
+                    spark     = dmc.Sparkline(
+                        data=ratio_series(), w="100%", h=24,
+                        color=spark_color(sval(ratio_series(), current_eom), sval(ratio_series(), base_eom), good_when_up=False),
+                        fillOpacity=0.5, curveType="Linear", strokeWidth=2
+                    )
+                ),
+            ]
+            right_block = dmc.Stack(gap=6, children=[
+                dmc.Text("Возвраты", fw=700, c="dimmed"),
+                html.Ul(style={"margin": 0, "paddingLeft": "1rem"}, children=returns_rows)
+            ])
+            # подпись справа (легенда режима)
+            def cap():
+                dmode = "Δ %" if delta_mode == "pct" else "Δ абс."
+                nfmt  = "млн ₽" if num_format == "mln" else "полные ₽"
+
+                # кто база?
+                if base_mode == "last_month":
+                    b = mon_yy(prev_eom)
+                    b_hint = "пред. месяц"
+                elif base_mode == "custom" and (base_eom is not None):
+                    b = mon_yy(base_eom)
+                    b_hint = "кастом"
+                else:
+                    b = mon_yy(first_eom)
+                    b_hint = "1-й мес. периода"
+
+                a = mon_yy(last_eom)  # всегда последний месяц
+
+                # если базы нет (например, единственный месяц данных)
+                if b in ("—", "", None):
+                    return f"{a} • {dmode} • {nfmt}"
+
+                return f"{a} vs {b} ({b_hint}) • {dmode} • {nfmt}"
+
+            cap_text = cap()
+
+            # подпись не нужна — вся инфа в строках
+            return [left_block, right_block], cap_text
 
 
-            ul = html.Ul(style={"listStyleType":"disc","margin":0,"paddingLeft":"1.2rem"}, children=rows)
-            return ul, cap_text
         
         
         
         
-        #### ОБНОВЛЕНИЕ ПРОДАЖ ПО МАГАЗИНАМ
+        
+        # ### Показ/скрытие MonthPickerInput
+        @app.callback(
+            Output({'type':'sum_base_custom_box','index':MATCH}, 'style'),
+            Input({'type':'sum_base_mode','index':MATCH}, 'value'),
+            prevent_initial_call=False,
+        )
+        def toggle_custom_box(base_mode):
+            return {"display":"block"} if base_mode == "custom" else {"display":"none"}
+        
+        
+        
+        
+        
+        
         @app.callback(
             Output({'type':'store_block','index':MATCH}, 'children'),
-            Input({'type':'sum_base_mode','index':MATCH}, 'value'),
-            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),
+            Input({'type':'sum_base_mode','index':MATCH}, 'value'),         # period | last_month | custom
+            Input({'type':'sum_delta_mode','index':MATCH}, 'value'),        # abs | pct
+            Input({'type':'sum_number_format','index':MATCH}, 'value'),     # mln | full
+            Input({'type':'sum_base_custom','index':MATCH}, 'value'),       # dmc.MonthPickerInput
             State({'type':'st_raw_eom','index':MATCH}, 'data'),
             prevent_initial_call=False,
         )
-        def update_store_block(base_mode, delta_mode, raw_eom):
+        def update_store_block(base_mode, delta_mode, num_format, base_custom_val, raw_eom):
             import pandas as pd, numpy as np, math
+            from decimal import Decimal, ROUND_HALF_UP
+            from pandas.tseries.offsets import MonthEnd
+
             rdf = pd.DataFrame(raw_eom or [])
             if rdf.empty:
                 raise PreventUpdate
 
+            # --- даты
             rdf['eom'] = pd.to_datetime(rdf['eom'], errors='coerce')
             rdf = rdf.dropna(subset=['eom'])
 
-            # опорные месяцы
             eoms = np.sort(rdf['eom'].unique())
-            last_eom = eoms[-1] if len(eoms) else None
-            prev_eom = eoms[-2] if len(eoms) >= 2 else None
-            first_eom = eoms[0] if len(eoms) else None
+            if len(eoms) == 0:
+                raise PreventUpdate
 
-            # сумма за весь период по магазину
-            sales_total = rdf.groupby('store_gr_name', as_index=False)['dt'].sum().rename(columns={'dt':'sum_dt'})
+            last_eom  = eoms[-1]
+            prev_eom  = eoms[-2] if len(eoms) >= 2 else None
+            first_eom = eoms[0]
 
-            # суммы по месяцам для дельт и "последнего месяца"
-            def sum_at(eom, col='dt', alias='val'):
-                if eom is None:  # безопасно, вернём пустое
+            # кастом → конец месяца
+            custom_eom = None
+            if base_custom_val:
+                try:
+                    custom_eom = pd.to_datetime(base_custom_val) + MonthEnd(0)
+                except Exception:
+                    custom_eom = None
+
+            # --- форматтеры
+            NBSP = "\u202F"
+            def fmt_money_full(x: float) -> str:
+                try: return f"{int(round(x)):,}".replace(",", NBSP) + " ₽"
+                except: return "0 ₽"
+            def fmt_money_mln(x: float) -> str:
+                try: return f"{x/1_000_000:,.2f}".replace(",", " ").replace(".", ",") + " млн ₽"
+                except: return "0,00 млн ₽"
+            def fmt_money(x: float) -> str:
+                return fmt_money_mln(x) if num_format == "mln" else fmt_money_full(x)
+            def fmt_int(x: float) -> str:
+                try: return f"{int(x):,}".replace(",", NBSP)
+                except: return "0"
+
+            MONTHS_RU_3 = ["ЯНВ","ФЕВ","МАР","АПР","МАЙ","ИЮН","ИЮЛ","АВГ","СЕН","ОКТ","НОЯ","ДЕК"]
+            def mon_yy(d):
+                if d is None or pd.isna(d): return "—"
+                d = pd.to_datetime(d); return f"{MONTHS_RU_3[d.month-1]} {d.strftime('%y')}"
+
+            # --- агрегаторы (метрика = чистая выручка amount)
+            METRIC_COL = 'amount'
+
+            def at_store(store, eom, col=METRIC_COL):
+                if (col not in rdf.columns) or (eom is None): return 0.0
+                return float(rdf.loc[(rdf['store_gr_name']==store) & (rdf['eom']==eom), col].sum())
+
+            def sum_at(eom, col=METRIC_COL, alias='val'):
+                if eom is None:
                     out = rdf[['store_gr_name']].drop_duplicates().copy()
                     out[alias] = 0.0
                     return out
-                part = rdf.loc[rdf['eom'] == eom]
-                return (part.groupby('store_gr_name', as_index=False)[col].sum()
-                            .rename(columns={col: alias}))
+                part = rdf.loc[rdf['eom']==eom]
+                return (part.groupby('store_gr_name', as_index=False)[col]
+                            .sum().rename(columns={col: alias}))
 
-            last_sales  = sum_at(last_eom,  alias='last_dt')
-            prev_sales  = sum_at(prev_eom,  alias='prev_dt')
-            first_sales = sum_at(first_eom, alias='first_dt')
+            # сводки по amount
+            last_sales   = sum_at(last_eom,   alias='last_val')
+            prev_sales   = sum_at(prev_eom,   alias='prev_val')
+            first_sales  = sum_at(first_eom,  alias='first_val')
+            custom_sales = sum_at(custom_eom, alias='custom_val') if custom_eom is not None else None
 
-            # сводная таблица
-            st = (sales_total
-                .merge(last_sales,  on='store_gr_name', how='left')
-                .merge(prev_sales,  on='store_gr_name', how='left')
-                .merge(first_sales, on='store_gr_name', how='left')
-                .fillna(0.0))
+            # итог последнего месяца для долей/сортировки
+            st = last_sales.copy()
+            if prev_sales is not None:   st = st.merge(prev_sales,  on='store_gr_name', how='left')
+            if first_sales is not None:  st = st.merge(first_sales, on='store_gr_name', how='left')
+            if custom_sales is not None: st = st.merge(custom_sales,on='store_gr_name', how='left')
+            st = st.fillna(0.0)
 
-            # что показываем как "значение" и чем делим для процента доли
+            # выбор базы для сравнения
             if base_mode == 'last_month':
-                st['value'] = st['last_dt']                # значение в строке
-                denom = st['last_dt'].sum() or 0.0         # для прогресса
-                prev_for_delta_col = 'prev_dt'             # стрелка: last vs prev
-            else:
-                st['value'] = st['sum_dt']                 # значение в строке
-                denom = st['sum_dt'].sum() or 0.0          # для прогресса
-                prev_for_delta_col = 'first_dt'            # стрелка: last vs first
+                current_eom, base_eom = last_eom, prev_eom
+                base_col_for_delta = 'prev_val'
+            elif base_mode == 'custom' and (custom_eom is not None):
+                current_eom, base_eom = last_eom, custom_eom
+                base_col_for_delta = 'custom_val'
+            else:  # period
+                current_eom, base_eom = last_eom, first_eom
+                base_col_for_delta = 'first_val'
 
-            st['share'] = np.where(denom > 0, st['value'] / denom * 100.0, 0.0)
-
-            # сортировка по значению (что логичнее визуально)
+            # доля и сортировка ВСЕГДА по чистой выручке ТЕКУЩЕГО месяца
+            denom = float(st['last_val'].sum()) or 0.0
+            st['share'] = np.where(denom>0, st['last_val']/denom*100.0, 0.0)
+            st['value'] = st['last_val']   # для сортировки
             st = st.sort_values('value', ascending=False).reset_index(drop=True)
 
-            # форматтеры
-            def _fmt_mln(x): return f"{x/1_000_000:,.2f} млн ₽"
+            # --- спарклайны по amount
+            period_eoms = (rdf[['eom']].drop_duplicates().sort_values('eom')['eom']).tolist()
+            by_store_month = (rdf.groupby(['store_gr_name','eom'])[METRIC_COL].sum()
+                                .unstack(fill_value=0.0)
+                                .reindex(columns=period_eoms, fill_value=0.0))
 
-            from decimal import Decimal, ROUND_HALF_UP
-            def fmt_abs(val):
-                v = (Decimal(val) / Decimal('1000000')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                return f"{v:,.2f} млн ₽"
+            def store_spark_vals(store):
+                return by_store_month.loc[store].tolist() if store in by_store_month.index else []
 
-            def delta_node(curr, prev, good_when_up=True, as_pct=True, w=90, ta="left"):
-                import pandas as pd
-                if prev in (None, 0) or pd.isna(prev) or math.isclose(prev, 0.0):
-                    return dmc.Text("—", c="gray", ta=ta, w=w, ff="tabular-nums")
-                diff = curr - prev
-                is_up_good = (diff > 0) if good_when_up else (diff < 0)
-                arrow = "▲" if diff > 0 else ("▼" if diff < 0 else "■")
-                color = "green" if is_up_good else ("red" if diff != 0 else "gray")
-                if as_pct:
+            def spark_color_for_store(store_vals, store_name):
+                if not store_vals or base_eom is None: return "gray"
+                last_val = store_vals[-1] if len(store_vals) else None
+                try:
+                    base_val = float(by_store_month.loc[store_name].get(base_eom, np.nan))
+                except Exception:
+                    base_val = None
+                if last_val is None or base_val is None or np.isnan(base_val): return "gray"
+                if math.isclose(last_val, base_val, rel_tol=0.005, abs_tol=1e-9): return "gray"
+                return "teal" if last_val > base_val else "red"
+
+            # --- мини-сетка для колонок curr/base: [МЕСЯЦ | ЗНАЧЕНИЕ]
+            MONTH_W = 64
+            GAP = 6
+            def pill(text):
+                return dmc.Kbd(text, size="xs", style={"opacity":0.9, "width": f"{MONTH_W}px", "textAlign":"center"})
+            def cell_box(children):
+                return dmc.Box(children=children, style={
+                    "display":"grid", "gridTemplateColumns": f"{MONTH_W}px 1fr",
+                    "alignItems":"center", "columnGap": f"{GAP}px", "justifyItems":"start",
+                    "whiteSpace":"nowrap",
+                })
+            def curr_cell(store):
+                v = at_store(store, current_eom, METRIC_COL)
+                return cell_box([pill(mon_yy(current_eom)), dmc.Text(fmt_money(v), fw=700, ff="tabular-nums")])
+            def base_cell(store):
+                v = at_store(store, base_eom, METRIC_COL)
+                return cell_box([pill(mon_yy(base_eom)), dmc.Text(fmt_money(v), fw=700, ff="tabular-nums")])
+
+            # дельта
+            def delta_node(curr, prev, *, good_up=True):
+                if prev in (None, 0) or (isinstance(prev, float) and math.isclose(prev, 0.0)):
+                    return dmc.Text("—", c="gray", ff="tabular-nums", fw=700, style={"whiteSpace":"nowrap"})
+                diff = (curr or 0.0) - (prev or 0.0)
+                color = "teal" if ((diff>0 and good_up) or (diff<0 and not good_up)) else ("red" if diff!=0 else "gray")
+                arrow = "▲" if diff>0 else ("▼" if diff<0 else "■")
+                if delta_mode == 'pct':
                     val = Decimal(diff/prev*100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
-                    txt = f"{abs(val)}%"
+                    txt = f"{arrow} {abs(val)}%"
                 else:
-                    txt = fmt_abs(abs(diff))
-                return dmc.Text(f"{arrow} {txt}", c=color, ta=ta, w=w, ff="tabular-nums")
+                    txt = f"{arrow} {fmt_money(abs(diff))}"
+                return dmc.Text(txt, c=color, ff="tabular-nums", fw=700, style={"whiteSpace":"nowrap"})
 
-            
-            def store_row(rank, r):
-                return dmc.Group(
-                    gap="sm", align="center",
-                    children=[
-                        dmc.Badge(str(rank), variant="filled", color="teal", w=40, ta="center"),
-                        dmc.Text(str(r['store_gr_name']), w=220, ta="left"),
-                        dmc.Text(_fmt_mln(r['value']), fw=600, w=140, ta="right"),
-                        delta_node(r['last_dt'], r[prev_for_delta_col], True, as_pct=(delta_mode=='pct'), w=90),
-                        dmc.Group(align="center", gap=8, children=[
-                            dmc.Progress(value=float(r['share']), w=180, size="sm", radius="xl"),
-                            dmc.Text(f"{r['share']:.1f}%", w=44, ta="right", c="dimmed", ff="tabular-nums"),
-                        ]),
-                    ]
+            # --- строка магазина: label(4) | curr(2) | base(2) | Δ(2) | spark(1) | share(1)  = 12
+            def store_row(rank, row):
+                store = row['store_gr_name']
+                vals = store_spark_vals(store)
+                spark = dmc.Sparkline(
+                    data=vals, w="100%", h=22, color=spark_color_for_store(vals, store),
+                    fillOpacity=0.5, curveType="Linear", strokeWidth=2
+                )
+                curr_v = at_store(store, current_eom, METRIC_COL)
+                base_v = row.get(base_col_for_delta, at_store(store, base_eom, METRIC_COL))
+
+                share_badge = dmc.Badge(f"{row['share']:.1f}%", variant="outline", radius="xs",
+                                        style={"whiteSpace":"nowrap", "justifySelf":"end"})
+
+                return html.Li(
+                    dmc.Grid(gutter="xs", align="center", columns=12, children=[
+                        dmc.GridCol(
+                            dmc.Group(gap=8, align="center", wrap="nowrap", children=[
+                                dmc.Badge(str(rank), variant="filled", color="teal", radius="xs", w=48, ta="center"),
+                                dmc.Text(store, style={
+                                    "whiteSpace":"nowrap","overflow":"hidden","textOverflow":"ellipsis"
+                                })
+                            ]),
+                            span=4
+                        ),
+                        dmc.GridCol(curr_cell(store), span=2),
+                        dmc.GridCol(base_cell(store), span=2),
+                        dmc.GridCol(delta_node(curr_v, base_v, good_up=True), span=2, style={"textAlign":"left"}),
+                        dmc.GridCol(dmc.Box(spark, style={"width":"100%"}), span=1),
+                        dmc.GridCol(share_badge, span=1, style={"textAlign":"right"}),
+                    ]),
+                    style={"listStyleType":"none", "margin":0, "padding":"2px 0"}
                 )
 
+            # заголовок с указанием месяцев и чётким названием доли
+            header = dmc.Grid(gutter="xs", align="center", columns=12, children=[
+                dmc.GridCol(dmc.Text("Магазин", c="dimmed", fw=600), span=4),
+                dmc.GridCol(dmc.Text(f"Текущий ({mon_yy(last_eom)})", c="dimmed", fw=600), span=2),
+                dmc.GridCol(dmc.Text(f"База ({mon_yy(base_eom)})", c="dimmed", fw=600), span=2),
+                dmc.GridCol(dmc.Text("Дельта", c="dimmed", fw=600), span=2, style={"textAlign":"left"}),
+                dmc.GridCol(dmc.Text("Тренд", c="dimmed", fw=600), span=1, style={"textAlign":"left"}),
+                dmc.GridCol(dmc.Text("Доля", c="dimmed", fw=600),
+                            span=1, style={"textAlign":"right"}),
+            ])
+
             rows = [store_row(i+1, r) for i, r in st.iterrows()]
-            return rows
+
+            return [dmc.Stack(gap=6, children=[header, html.Ul(style={"margin":0, "paddingLeft":"0"}, children=rows)])]
 
 
 
-        
-        
-        
-        
-        
+   
+        ### ПОКАЗЫВАТЬ ОПРЕДЕЛЕННЫЕ МЕСЯЦА В КАЛЕНДАРЕ МАКСИМЛАЬНЫЕ И МИНИМАЛЬНЫЕ
+        @app.callback(
+            Output({'type':'sum_base_custom','index':MATCH}, 'minDate'),
+            Output({'type':'sum_base_custom','index':MATCH}, 'maxDate'),
+            Output({'type':'sum_base_custom','index':MATCH}, 'disabled'),
+            Output({'type':'sum_base_custom','index':MATCH}, 'value'),
+            Input({'type':'st_raw_eom','index':MATCH}, 'data'),
+            State({'type':'sum_base_custom','index':MATCH}, 'value'),
+            prevent_initial_call=False,
+        )
+        def setup_custom_month_bounds(raw_eom, current_value):
+            import pandas as pd, numpy as np
+            # по умолчанию всё отключено
+            min_date = max_date = None
+            disabled = True
+            out_value = current_value
 
+            rdf = pd.DataFrame(raw_eom or [])
+            if rdf.empty or 'eom' not in rdf.columns:
+                return min_date, max_date, disabled, None
 
+            # нормализуем даты
+            rdf['eom'] = pd.to_datetime(rdf['eom'], errors='coerce')
+            rdf = rdf.dropna(subset=['eom'])
+            eoms = np.sort(rdf['eom'].unique())
+            if len(eoms) == 0:
+                return min_date, max_date, disabled, None
 
+            first_eom = pd.to_datetime(eoms[0])
+            last_eom  = pd.to_datetime(eoms[-1])
 
+            # max = предыдущий месяц от последнего
+            if len(eoms) >= 2:
+                prev_eom = pd.to_datetime(eoms[-2])
+                min_date = first_eom.to_pydatetime()
+                max_date = prev_eom.to_pydatetime()
+                disabled = False
+            else:
+                # всего один месяц — выбирать не из чего
+                min_date = first_eom.to_pydatetime()
+                max_date = first_eom.to_pydatetime()
+                disabled = True
+
+            # если текущее значение вне границ — очистим
+            if current_value:
+                try:
+                    v = pd.to_datetime(current_value) + MonthEnd(0)
+                    if (v < pd.to_datetime(min_date)) or (v > pd.to_datetime(max_date)):
+                        out_value = None
+                except Exception:
+                    out_value = None
+
+            return min_date, max_date, disabled, out_value
