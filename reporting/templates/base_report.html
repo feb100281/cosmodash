@@ -6,9 +6,15 @@
         <style> 
             /* css-lint-disable */
             {{ fontface|safe }}  
+            
+            :root {
+                --theme-font: "{{ fontfamily }}", sans-serif;  
+                --logo-img: url("{{ logo }}");
+                --fontsize: {{ fontsize }};  
+            }
         </style>
         <link rel="stylesheet" href="{{ bootswatch_theme|safe }}">
-        <link rel="stylesheet" href="/Users/pavelustenko/cosmodash/reporting/templates/base_report.css">
+        {{template_css}}
         
         
     </head>
@@ -23,6 +29,7 @@
             <hr>
         
         <article class="main_article">
+            
             {{content|safe}}
 
         </article>

@@ -2,43 +2,65 @@ from reporting.report_generator import (
     ReportGenerator,
     MarkdownBlock,
     DataTable,
-    PlotlyFigure,
+    Icon,
+    BS
 )
 import pandas as pd
 from data import load_df_from_redis
+import locale
+locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 
-def big_button_click(df_id=None):
+
+def pdf_data_click(df_id=None):
 
     df = pd.DataFrame()
     if df_id:
         df = load_df_from_redis(df_id)
 
-        df = df.pivot_table(
-            index=["chanel", "store_gr_name"],
-            columns="eom",
-            values="amount",
-            aggfunc="sum",
-        ).fillna(0)
+    
+    date_start = pd.to_datetime(df['date'].min())
+    date_start = date_start.strftime('%-d %B %Y')
+    
+    date_finish = pd.to_datetime(df['date'].max())
+    date_finish = date_finish.strftime('%-d %B %Y')
+    
+    dnl_content = ReportGenerator(
+        title='Отчет по динамики продаж',
+        bootswatch_theme='yeti',
+        fontsize='md'
+    )
+    
+    stores_sales = df.pivot_table(
+        index = ['chanel','store_gr_name'],
+        values=['amount'],
+        aggfunc='sum'
+    )
+    
+    md = f"""
+## Отчет по динамики продаж
+#### за период с {date_start} по {date_finish}
 
-    df1 = round(df / 1_000, 2)
+### Резюме:
 
-    md = """
+За рассматриваемый период были получены следующие показатели:
 
-# Отчет для пробы
+{Icon.Streamline.business_deal_cash_2.render()} Чистая выручка за период - {df.amount.sum()/1_000_000:,.0f} млн рублей;
 
-## Подзаголовки
+{Icon.Streamline.pile_of_money_duo.render()} Продажи - {df.dt.sum()/1_000_000:,.0f} млн рублей;
 
-Здесь будем давать комментарии. А, теперь понятно 😅 — проблема в том, что @bottom-center не может выходить за пределы @page, и margin-bottom просто сдвигает контент внутри доступной области, но нижняя граница страницы остаётся нулевой (0cm). То есть нельзя просто "поднять" блок за пределы нижнего края через margin.
+{Icon.Streamline.backpack.render()} Возвраты - {df.cr.sum()/1_000_000:,.0f} млн рублей;
 
-### Деалем список
+{Icon.Streamline.dangerous_chemical_lab.render()} Коэффициент возвратов - {(df.dt.sum()/df.cr.sum())*100:,.1f}%.
 
-- Нижний отступ страницы  создаёт место, куда @bottom-center может вставиться.
-- *Впримере 2cm* - **это расстояние** от нижнего края страницы до номера
+### Распределение выручки по магащинам
+{stores_sales.to_markdown()}
+
+
 
 """
-    par1 = MarkdownBlock(md,font_size='14px')
-    table1 = DataTable(df=df1)
+    par1 = MarkdownBlock(md)
+    dnl_content.add_component(par1)
     
-    return ReportGenerator().add_component(par1,table1)
+    return dnl_content
     

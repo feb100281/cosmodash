@@ -294,173 +294,19 @@ def load_columns_dates(columns, dates):
         data[col] = load_column_dates(col, dates)
     return pd.DataFrame(data)
 
+REPORTS = {}
 
-# cols = ['manager','date','amount','store','eom','chanel','cat']
+def save_report(report):
+    rid = str(uuid.uuid4())
+    REPORTS[rid] = report
+    return rid
 
+def load_report(rid):
+    return REPORTS.get(rid)
 
-# import time
-
-# df_jan_feb = load_columns_df(r, cols, "2024-01-31", "2025-08-31")
-# # print(df_jan_feb)
-# print(df_jan_feb.memory_usage(deep=True).sum() / 1024**2, "MB")
-
-# start = time.time()
-
-
-# #a = save_df_to_redis(df_jan_feb)
-# #print(a)
-# b = load_df_from_redis('e3d09ccf-6538-4d2a-b42f-f93f01b3e6a0')
-
-
-# end = time.time()
-
-# print(f"Время выполнения: {end - start:.3f} секунд")
-
-
-# g = r.get('all')
-# df = pickle.loads(g)
-# print(df)
-
-
-# df = df_jan_feb.pivot_table(
-#     index='eom',
-#     columns=['chanel','store'],
-#     values='dt',
-#     aggfunc='sum'
-
-# ).reset_index().sort_values(by='eom')
-# # print(df)
-
-
-# class RedisLoader:
-#     @staticmethod
-#     def load_df(key, default=None):
-#         pickled = r.get(key)
-#         if pickled is None:
-#             return default if default is not None else pd.DataFrame()
-#         return pickle.loads(pickled)
-
-
-# class DataMart:
-#     pass
-
-
-# class SalesDynamix:
-#     def __init__(
-#         self,
-#         store_filter=None,
-#         chanel_filter=None,
-#         store_gr_name_filter=None,
-#         month_id_filter=None,
-#         period_filter="monthly",
-#         store_breadown=False,
-#         chanel_breakdon=False,
-#     ):
-
-#         self.KEY = (
-#             "sd_monthly_data"
-#             if period_filter != "weekly"
-#             else "sd_weekly_data"
-#         )
-#         self.store_filter = store_filter
-#         self.chanel_filter = chanel_filter
-#         self.store_gr_name_filter = store_gr_name_filter
-#         self.month_id_filter = month_id_filter
-#         self.period_filter = period_filter
-#         self.store_breakdown = store_breadown
-#         self.chanel_breakdon = chanel_breakdon
-
-#     def data(self):
-#         df = RedisLoader.load_df(self.KEY)
-#         if df.empty:
-#             return None
-#         total_chart = df.pivot_table(
-#             index=['eom','month_fmt'],
-#             values=['dt','cr','amount','quant_dt','quant_cr','quant','client_order'],
-#             aggfunc='sum'
-#         ).fillna(0).reset_index().sort_values(by='eom')
-#         total_chart['average_check'] = total_chart['amount'] / total_chart['client_order']
-
-
-#         if self.period_filter == "monthly":
-#             if self.month_id_filter:
-#                 if isinstance(self.month_id_filter, list):
-#                     start, finish = self.month_id_filter
-#                     df = df[(df["month_id"] >= start) & (df["month_id"] <= finish)]
-#                 elif isinstance(self.month_id_filter, int):
-#                     df = df[df["month_id"] == self.month_id_filter]
-#             else:
-#                 finish = df["month_id"].max()
-#                 start = finish - 12
-#                 df = df[(df["month_id"] >= start) & (df["month_id"] <= finish)]
-
-#         if self.store_gr_name_filter:
-#             if isinstance(self.store_gr_name_filter, list):
-#                 df = df[df["store_group"].isin(self.store_gr_name_filter)]
-#             elif isinstance(self.store_gr_name_filter, str):
-#                 df = df[df["store_group"] == self.store_gr_name_filter]
-#         else:
-#             if not self.store_breakdown:
-#                 df["store_group"] = "Все данные"
-
-#         if self.chanel_filter:
-#             if isinstance(self.chanel_filter, list):
-#                 df = df[df["store_group"].isin(self.store_gr_name_filter)]
-#             elif isinstance(self.chanel_filter, str):
-#                 df = df[df["store_group"] == self.chanel_filter]
-#         else:
-#             if not self.chanel_breakdon:
-#                 df["store_group"] = "Все данные"
-
-#         return df, total_chart
-
-# class SegmentAnalisys:
-#     def __init__(self):
-#         self.KEY = 'ia_data'
-
-#     def data(self):
-#         def df_to_nested_dict(df: pd.DataFrame, cols: list[str]) -> dict:
-#             """
-#             Преобразует DataFrame в вложенный словарь по указанным колонкам.
-#             """
-#             result = {}
-#             for row in df[cols].drop_duplicates().itertuples(index=False):
-#                 d = result
-#                 for col in row[:-1]:  # все уровни кроме последнего
-#                     d = d.setdefault(col, {})
-#                 d[row[-1]] = {}  # fullname — лист
-#             return result
-
-
-#         def dict_to_dmc_tree(d: dict) -> list:
-#             """
-#             Преобразует вложенный словарь в список узлов для dmc.Tree.
-#             """
-#             nodes = []
-#             for key, val in d.items():
-#                 node = {"value": key, "label": key}
-#                 if val:  # есть дети
-#                     node["children"] = dict_to_dmc_tree(val)
-#                 nodes.append(node)
-#             return nodes
-
-
-#         def df_to_dmc_tree(df: pd.DataFrame, cols: list[str]) -> list:
-#             nested = df_to_nested_dict(df, cols)
-#             return dict_to_dmc_tree(nested)
-
-#         df = RedisLoader.load_df(self.KEY)
-#         cats_list = ['parent_cat','cat','subcat','fullname']
-#         dff = df[cats_list].drop_duplicates()
-#         dff = dff.sort_values(by='parent_cat',ascending=False)
-#         valid_data = df_to_dmc_tree(dff, cats_list)
-
-#         return df,valid_data
-
-
-# df = RedisLoader.load_df('segment_analisys_monthly')
-# print(df['parent_cat'].unique())
-
-
-# a = SegmentAnalisys()
-# print(a.data()[0])
+def delete_report(rid):
+    """Удаляет отчёт из памяти, если он есть"""
+    if rid in REPORTS:
+        del REPORTS[rid]
+    
+    

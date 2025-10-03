@@ -32,7 +32,7 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
 from components import NoData, InDevNotice, ClickOnNotice
-from reporting.preview_modal import PreviewModal
+from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
 
 class MainWnidow:
     def __init__(self):
@@ -172,7 +172,9 @@ class MainWnidow:
             dmc.AppShellMain([page_container,
                               html.Div(id="dummy-theme-output", style={"display": "none"}),                              
                               sd_components().df_store,
-                              PreviewModal().PreviewModal   
+                              dcc.Store(id='pdf_download', storage_type='memory'),
+                              PREVIEW_MODAL
+                                                         
                               ]),
         ],
             header={"height": 60},
@@ -194,7 +196,7 @@ class MainWnidow:
             defaultColorScheme=self.initial_theme,
             children=[
                 self.layout,
-                dcc.Store(id="theme-init", storage_type="local"),
+                dcc.Store(id="theme-init", storage_type="local"),                
             ],
         )
 
@@ -268,6 +270,7 @@ def main_app():
 
     MainWnidow().main_page_callbacks(app)
     sd_components().register_callbacks(app)
+    preview_callbacks(app)
 
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
