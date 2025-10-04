@@ -5,6 +5,9 @@ from data import (
     save_df_to_redis,
     load_df_from_redis,
     delete_df_from_redis,
+    save_report,
+    delete_report,    
+    REPORTS
 )
 from dash.exceptions import PreventUpdate
 from datetime import datetime, date, timedelta
@@ -34,13 +37,14 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice
+from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice, DownLoadMenu
 from data import (
     load_df_from_redis,
     load_columns_dates,
+    save_df_to_redis,
     COLS_DICT,
 )
-
+from .downloading_content import pdf_data_click
 
 class AreaChartModal:
     def __init__(self, month=None):
@@ -753,6 +757,11 @@ class Components:
         self.av_check_chart_id = {"type": "gt_av_check_chart", "index": "1"}
         self.check_selector_id = {"type": "selector", "index": "1"}
         self.memo_id = {"type": "memo", "index": "1"}
+        
+        self.dnl_buton_id = {'type':'content_download_button_for_gt','index':'1'}
+        self.dcc_download_id = {'type':'content_download_dcc_for_gt','index':'1'}
+        
+        self.pdf_dnl_type = 'gt_pdf_dnl_type_id_unique'
 
     def data(self):
         df_id = self.df_id
@@ -936,17 +945,28 @@ class Components:
                 showLabel="Читать далее",
             )
 
-        return update_area_chart(), update_av_check_chart(), memo()
+        def dnl_button():
+            return dmc.Flex(DownLoadMenu(
+                xls_disable=True,
+                html_disable=True,
+                pdf_disable=False,
+                pdf_id_type=self.pdf_dnl_type                
+            ).menu,justify='flex-end')
+        
+        
+        return update_area_chart(), update_av_check_chart(), memo(), dnl_button()
 
 
 def layout(df_id=None):
     df_id = df_id if df_id is not None else None
     comp = Components(df_id)
+    area_chart, av_check_chart, memo, dnl_button  = comp.data()
     try:
-        area_chart, av_check_chart, memo = comp.data()
+        area_chart, av_check_chart, memo, dnl_button  = comp.data()
 
         return dmc.Container(
             children=[
+                dnl_button,
                 dmc.Space(h=10),
                 memo,
                 dmc.Space(h=20),
@@ -973,6 +993,8 @@ def registed_callbacks(app):
     av_check_selectir_type = comp.check_selector_id["type"]
     av_check_modal_type = modal.modal_id["type"]
     av_check_modal_text_type = modal.modal_text_id["type"]
+    pdf_dnl_button = comp.pdf_dnl_type
+    dcc_dnl = comp.dcc_download_id['type']
 
     # График среднего чека
     @app.callback(
@@ -1008,4 +1030,47 @@ def registed_callbacks(app):
 
         return not opened, data
 
+    
+    @app.callback(
+    Output('pdf_download','data'),
+    Output('preview_modal','opened'),
+    Output('pdf_content','children'),
+    Output("loading-indicator", "children"),
+    Output('PreviewModal_theme_selector','value'),
+    Output('PreviewModal_size_chose','value'),
+    Input({'type':pdf_dnl_button, 'index': ALL}, 'n_clicks'),
+    State('df_store','data'),
+    State('pdf_download','data'),
+    State('preview_modal','opened'),
+    prevent_initial_call=True
+    )
+    def get_report(n_clicks, data, last_id, opened):
+        if not n_clicks or all(x is None for x in n_clicks):
+            raise dash.exceptions.PreventUpdate  
+        
+        df_id = data['df_id']
+
+        # генерируем новый объект отчёта
+        report = pdf_data_click(df_id)
+        
+        #дефолтные значения собираем
+        current_theme = report.bootswatch_theme
+        currnet_fontsize = report.fontsize
+        
+        content = report.return_iframe()
+
+        # удаляем старый отчёт из памяти
+        if last_id:
+            delete_report(last_id)
+
+        # сохраняем новый отчёт
+        report_id = save_report(report)      
+
+        # возвращаем rid в pdf_download.data
+        return report_id, not opened, content, "", current_theme, currnet_fontsize
+        
+    
+    
+    
+    
     AreaChartModal().registered_callacks(app)
