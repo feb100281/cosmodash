@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from dash.exceptions import PreventUpdate
 from decimal import Decimal, ROUND_HALF_UP
+import dash_ag_grid as dag
 
 import dash
 from dash import (
@@ -19,7 +20,6 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 from components import NoData, BASE_COLORS, COLORS_BY_SHADE
 from data import load_df_from_redis
 from .modal_area_chart import StoreAreaChartModal
-
 
 
 
@@ -108,6 +108,18 @@ class StoresComponents:
             return
         
         df_data: pd.DataFrame = load_df_from_redis(self.df_id)
+        def store_full_df_for_returns():
+            cols = [
+                "date", "cr", "store_gr_name", "subcat", 'cat', 'fullname',
+                "client_order", "quant_cr", "client_order_number", "manager",
+                "chanel", "store_region", "brend", "manu",
+            ]
+            for c in cols:
+                if c not in df_data.columns:
+                    df_data[c] = None
+            return dcc.Store(id="df_returns_store", data=df_data[cols].to_dict("records"), storage_type="memory")
+
+
         if df_data is None or df_data.empty:
             return
         df_data['store_region'] = df_data['store_region'].fillna('Регион не указан')
@@ -180,7 +192,7 @@ class StoresComponents:
         def store_raw():
             wanted = ['eom','store_gr_name','chanel','store_region',
                     'amount','dt','cr','quant','quant_dt','quant_cr',
-                    'orders','av_check']
+                    'orders','av_check', ]
             tmp = df_eom.copy()
             for c in wanted:
                 if c not in tmp.columns:
@@ -287,7 +299,7 @@ class StoresComponents:
                 ],
             )
 
-        # ---- main chart (как у тебя было)
+        # ---- main chart 
         def chart():
             df = df_eom.pivot_table(index='eom', columns='store_gr_name', values='amount', aggfunc='sum') \
                     .fillna(0).reset_index().sort_values('eom')
@@ -478,8 +490,11 @@ class StoresComponents:
                     ]
                 )
             )
-
-
+            
+            
+            
+            
+        
 
 
             
@@ -527,33 +542,271 @@ class StoresComponents:
                     dmc.Divider(variant="dashed", my=8),
                     controls,
                     dmc.Divider(variant="dashed", my=8),
-                  dmc.SimpleGrid(
-                            id={'type':'sum_rows','index':'1'},
-                            cols=2, spacing="md",
-                            children=[]  
-                        ),
+
+                
+                dcc.Loading(
+                    id={'type':'sum_loading','index':'1'},          
+                    children=dmc.SimpleGrid(
+                        id={'type':'sum_rows','index':'1'},
+                        cols=2, spacing="md",
+                        children=[]
+                    ),
+
+                ),
                     dmc.Divider(variant="dashed", my=8),
-                    dmc.Spoiler(
-                       showLabel=dmc.Badge(
-                            "Продажи по магазинам",
-             	        variant="light", color="teal", radius="xs", size="md",
+                    # dmc.Spoiler(
+                    #    showLabel=dmc.Badge(
+                    #         "Продажи по магазинам",
+             	    #     variant="light", color="teal", radius="xs", size="md",
                           
+                    #     ),
+                    #     hideLabel=dmc.Badge(
+                    #         "Скрыть",
+                    #     variant="light", color="gray", radius="xs", size="md",
+                    #         leftSection=DashIconify(icon="tabler:chevron-up")
+                    #     ),
+                    #     maxHeight=0, transitionDuration=200,
+                    #     children=[
+                    #         dmc.Paper(
+                    #             withBorder=True, radius="md", p="sm", mt="xs",
+                    #             children=dmc.Stack(id={'type':'store_block','index':'1'}, gap="xs")
+                    #         )
+                    #     ]
+                    # )
+                    
+                    dmc.Spoiler(
+                        showLabel=dmc.Badge(
+                            "Продажи по магазинам",
+                            variant="light", color="blue", radius="xs", size="md",
                         ),
                         hideLabel=dmc.Badge(
                             "Скрыть",
-                        variant="light", color="gray", radius="xs", size="md",
+                            variant="light", color="gray", radius="xs", size="md",
                             leftSection=DashIconify(icon="tabler:chevron-up")
                         ),
                         maxHeight=0, transitionDuration=200,
                         children=[
                             dmc.Paper(
                                 withBorder=True, radius="md", p="sm", mt="xs",
-                                children=dmc.Stack(id={'type':'store_block','index':'1'}, gap="xs")
+                                children=dcc.Loading(
+                                    id={'type':'store_loading','index':'1'},     # опционально
+                                    children=dmc.Stack(
+                                        id={'type':'store_block','index':'1'},
+                                        gap="xs"
+                                    ),
+                                    
+                                )
                             )
                         ]
                     )
+
                 ]
             )
+            
+          
+        
+        returns_modal = dmc.Modal(
+            id="returns_modal",
+            title=dmc.Group([
+                DashIconify(icon="tabler:eye", width=18),
+                dmc.Text("Детализация возвратов", fw=700),
+                dmc.SegmentedControl(
+                    id="returns_range",
+                    data=[
+                        {"label": "Последний месяц", "value": "last"},
+                        {"label": "Весь период",     "value": "all"},
+                    ],
+                    value="last", size="sm", radius="xs", color="blue",
+                ),
+            ]),
+            size="90%",
+            centered=True,
+            overlayProps={"opacity": 0.55, "blur": 2},
+            children=[
+                # ——— ПОНЧИК — распределение возвратов  ———
+
+                dmc.SimpleGrid(
+                    cols=2,
+                    spacing="md",
+                    children=[
+                        # ===== ПОНЧИК №1: по категориям =====
+                        dmc.Paper(
+                            withBorder=True, radius="md", p="sm",
+                            children=[
+                                dmc.Group(
+                                    justify="space-between", align="center",
+                                    children=[
+                                        dmc.Group(gap="xs", children=[
+                                            DashIconify(icon="tabler:chart-donut", width=18),
+                                            dmc.Text("Распределение возвратов по категориям", fw=700),
+                                            dmc.Space(h=10),
+                                        ]),
+                                    ],
+                                ),
+                                dmc.Group(
+                                    align="start", gap="lg", wrap=False,
+                                    children=[
+                                        dcc.Loading(
+              
+                                            children=dmc.DonutChart(
+                                                id="returns_cat_donut",
+                                                data=[],
+                                                withTooltip=True,
+                                                withLabels=False,
+                                                strokeWidth=2,
+                                                paddingAngle=2,
+                                                chartLabel="",
+                                              
+                                     
+                        
+                                                size=260,
+                                                thickness=35,
+                                            ),
+                                        ),
+                                        dmc.Stack(
+                                            id="returns_cat_legend",
+                                            gap=6,
+                                            style={"minWidth": 260, "flex": 1},
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+
+                        # ===== ПОНЧИК №2: по производителям =====
+                        dmc.Paper(
+                            withBorder=True, radius="md", p="sm",
+                            children=[
+                                dmc.Group(
+                                    justify="space-between", align="center",
+                                    children=[
+                                        dmc.Group(gap="xs", children=[
+                                            DashIconify(icon="fluent:building-factory-16-regular", width=18),
+                                            dmc.Text("Распределение возвратов по производителям", fw=700),
+                                            dmc.Space(h=10),
+                                        ]),
+                                    ],
+                                ),
+                                dmc.Group(
+                                    align="start", gap="lg", wrap=False,
+                                    children=[
+                                        dcc.Loading(
+                 
+                                            children=dmc.DonutChart(
+                                                id="returns_manu_donut",
+                                                data=[],
+                                                withTooltip=True,
+                                                withLabels=False,
+                                                strokeWidth=2,
+                                                paddingAngle=2,
+                                                chartLabel="",
+                                                
+                        
+                                                size=260,
+                                                thickness=35,
+                                            ),
+                                        ),
+                                        dmc.Stack(
+                                            id="returns_manu_legend",
+                                            gap=6,
+                                            style={"minWidth": 260, "flex": 1},
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                
+                dmc.Space(h=15),
+
+
+
+
+
+                # ——— ТАБЛИЦА — возвраты ———
+                dcc.Loading(
+
+                    children=dag.AgGrid(
+                        id="returns_grid",
+                        columnDefs=[
+                            {"headerName": "Дата", "field": "date", "minWidth": 120,
+                            "cellClass": "ag-firstcol-bg", "pinned": "left", "headerClass": "ag-center-header"},
+
+                            {"headerName": "№ заказа", "field": "client_order_number", "minWidth": 130,
+                            "headerClass": "ag-center-header"},
+
+                            # ГРУППА «Номенклатура»
+                            {
+                                "headerName": "Номенклатура",
+                                "groupId": "product",
+                                "marryChildren": True,
+                                "headerClass": "ag-center-header",
+                                "children": [
+                                    {"headerName": "Номенклатура", "field": "fullname",
+                                    "minWidth": 220, "type": "leftAligned", "cellClass": "ag-firstcol-bg",
+                                    "headerClass": "ag-center-header"},
+
+                                    {"headerName": "Бренд", "field": "brend",
+                                    "minWidth": 180, "type": "leftAligned", "columnGroupShow": "open",
+                                    "headerClass": "ag-center-header",
+                                    # опционально: подставляем «Бренд не указан» прямо в ячейке
+                                    # "valueGetter": {"function": "(p)=> (p.data && p.data.brend && String(p.data.brend).trim()) ? p.data.brend : 'Бренд не указан'"}
+                                    },
+
+                                    {"headerName": "Производитель", "field": "manu",
+                                    "minWidth": 180, "type": "leftAligned", "columnGroupShow": "open",
+                                    "headerClass": "ag-center-header",
+                                    # "valueGetter": {"function": "(p)=> (p.data && p.data.manu && String(p.data.manu).trim()) ? p.data.manu : 'Производитель не указан'"}
+                                    },
+
+                                    {"headerName": "Категория", "field": "cat",
+                                    "minWidth": 160, "type": "leftAligned", "columnGroupShow": "open",
+                                    "headerClass": "ag-center-header"},
+
+                                    {"headerName": "Подкатегория", "field": "subcat",
+                                    "minWidth": 180, "type": "leftAligned", "columnGroupShow": "open",
+                                    "headerClass": "ag-center-header"},
+                                ],
+                            },
+
+                            {"headerName": "Кол-во", "field": "quant_cr", "minWidth": 100, "type": "centerAligned",
+                            "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},
+                            "headerClass": "ag-center-header"},
+
+                            {"headerName": "Возвраты ₽", "field": "cr", "minWidth": 130, "type": "rightAligned",
+                            "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"},
+                            "cellClass": "ag-firstcol-bg", "headerClass": "ag-center-header"},
+
+                            {"headerName": "Магазин", "field": "store_gr_name", "minWidth": 160, "type": "leftAligned",
+                            "headerClass": "ag-center-header"},
+
+                            {"headerName": "Менеджер", "field": "manager", "minWidth": 150, "type": "leftAligned",
+                            "pinned": "right", "headerClass": "ag-center-header"},
+                        ],
+                        defaultColDef={
+                            "sortable": True,
+                            "filter": True,
+                            "resizable": True,
+                            "floatingFilter": True,
+                            "headerClass": "ag-center-header",  # центр для всех заголовков по умолчанию
+                        },
+                        rowData=[],  # заполняется колбэком
+                        dashGridOptions={
+                            "rowHeight": 32,
+                            "animateRows": True,
+                            "domLayout": "normal",
+                        },
+                        style={"width": "100%", "height": "70vh"},
+                        className="ag-theme-alpine",
+                        dangerously_allow_code=True
+                    ),
+                ),
+            ],
+        )
+
+
+
 
 
 
@@ -584,7 +837,13 @@ class StoresComponents:
             chart(),
             report_drawer(),
             memo(),
+            returns_modal,
+            store_full_df_for_returns(),
+
         )
+    
+    
+
 
 
     # ======================= LAYOUT =======================
@@ -592,7 +851,7 @@ class StoresComponents:
     def tab_layout(self):
         if not self.df_id:
             return NoData().component
-        filter_store, raw_store, controls, chart, report_drawer, memo = self.create_components()
+        filter_store, raw_store, controls, chart, report_drawer, memo, returns_modal, df_returns_store = self.create_components()
         return dmc.Container(
             fluid=True,
             children=[
@@ -625,9 +884,16 @@ class StoresComponents:
                 filter_store,
                 raw_store,
                 report_drawer,
+                returns_modal, 
+                df_returns_store, 
                 StoreAreaChartModal().create_components(),
+   
+
             ],
         )
+    
+    
+
         
 
 
@@ -1191,8 +1457,31 @@ class StoresComponents:
                     )
                 ),
             ]
+            # right_block = dmc.Stack(gap=6, children=[
+            #     dmc.Text("Возвраты", fw=700, c="dimmed"),
+            #     html.Ul(style={"margin": 0, "paddingLeft": "1rem"}, children=returns_rows)
+            # ])
+            
+            
             right_block = dmc.Stack(gap=6, children=[
-                dmc.Text("Возвраты", fw=700, c="dimmed"),
+                dmc.Group(
+                    align="center",
+                    gap="xs",
+                    children=[
+                        dmc.Text("Возвраты", fw=700, c="dimmed"),
+                        dmc.Tooltip(
+                            label="Детализация возвратов",
+                            position="right",
+                            withArrow=True,
+                            children=dmc.ActionIcon(
+                                id="open_returns_modal",               
+                                variant="light",
+                                size="lg",
+                                children=DashIconify(icon="tabler:eye", width=20, height=20)
+                            )
+                        ),
+                    ]
+                ),
                 html.Ul(style={"margin": 0, "paddingLeft": "1rem"}, children=returns_rows)
             ])
             # подпись справа (легенда режима)
@@ -1504,3 +1793,200 @@ class StoresComponents:
                     out_value = None
 
             return min_date, max_date, disabled, out_value
+        
+
+        
+        
+        # === ОТКРЫТИЕ МОДАЛКИ: сразу показываем последний месяц ===
+        # @app.callback(
+        #     Output("returns_modal", "opened"),
+        #     Output("returns_grid", "rowData"),
+        #     Input("open_returns_modal", "n_clicks"),
+        #     Input("returns_range", "value"),               # "last" | "all"
+        #     State("df_returns_store", "data"),
+        #     State("returns_modal", "opened"),
+        #     prevent_initial_call=True,
+        # )
+        # def open_or_update_returns(n_clicks, mode, df_data, is_opened):
+        #     trig = (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None)
+
+        #     # если кликнули кнопку — точно открыть модалку
+        #     open_out = True if trig == "open_returns_modal" else is_opened
+        #     if not n_clicks and not is_opened:
+        #         # ни клика, ни открытого окна — ничего не делаем
+        #         raise PreventUpdate
+
+        #     df = pd.DataFrame(df_data or [])
+        #     if df.empty:
+        #         return open_out, []
+
+        #     needed = ["date","client_order_number","manager","cr","quant_cr",
+        #             "store_gr_name","subcat","cat","fullname", "brend", "manu"]
+        #     for c in needed:
+        #         if c not in df.columns:
+        #             df[c] = None
+            
+            
+        #     # заполняем пустые Производитель/Бренд читабельными метками
+        #     def fill_label(series, label):
+        #         return (
+        #             series.astype("string")              # нормализуем к string dtype
+        #                 .fillna("")                   # NaN -> ""
+        #                 .str.strip()                  # убираем пробелы
+        #                 .replace({"None": "", "nan": ""})  # строки "None"/"nan" тоже считаем пустыми
+        #                 .map(lambda x: label if x == "" else x)
+        #         )
+
+        #     df["manu"]  = fill_label(df["manu"],  "Производитель не указан")
+        #     df["brend"] = fill_label(df["brend"], "Бренд не указан")
+
+
+        #     df["date"]     = pd.to_datetime(df["date"], errors="coerce")
+        #     df["cr"]       = pd.to_numeric(df["cr"], errors="coerce").fillna(0)
+        #     df["quant_cr"] = pd.to_numeric(df["quant_cr"], errors="coerce").fillna(0)
+        #     df = df[df["cr"] != 0]
+
+        #     if df.empty:
+        #         return open_out, []
+
+        #     # режим диапазона: по умолчанию — "last"
+        #     mode = mode or "last"
+        #     if mode == "last":
+        #         last_date = df["date"].max()
+        #         start = last_date.replace(day=1)
+        #         # следующий месяц
+        #         next_start = start.replace(year=start.year + 1, month=1) if start.month == 12 \
+        #                     else start.replace(month=start.month + 1)
+        #         df = df[(df["date"] >= start) & (df["date"] < next_start)]
+
+        #     df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+        #     return open_out, df[needed].to_dict("records")
+        
+        
+        
+
+
+
+
+
+        @app.callback(
+            Output("returns_modal", "opened"),
+            Output("returns_grid", "rowData"),
+            # donut by category
+            Output("returns_cat_donut", "data"),
+            Output("returns_cat_donut", "chartLabel"),
+            Output("returns_cat_legend", "children"),
+            # donut by manufacturer
+            Output("returns_manu_donut", "data"),
+            Output("returns_manu_donut", "chartLabel"),
+            Output("returns_manu_legend", "children"),
+            Input("open_returns_modal", "n_clicks"),
+            Input("returns_range", "value"),            # "last" | "all"
+            State("df_returns_store", "data"),
+            State("returns_modal", "opened"),
+            prevent_initial_call=True,
+        )
+        def open_or_update_returns(n_clicks, mode, df_data, is_opened):
+            import pandas as pd, numpy as np
+
+            trig = (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None)
+            open_out = True if trig == "open_returns_modal" else is_opened
+            if not n_clicks and not is_opened:
+                raise PreventUpdate
+
+            df = pd.DataFrame(df_data or [])
+            if df.empty:
+                return open_out, [], [], "", [], [], "", []
+
+            needed = ["date","client_order_number","manager","cr","quant_cr",
+                    "store_gr_name","subcat","cat","fullname","brend","manu"]
+            for c in needed:
+                if c not in df.columns:
+                    df[c] = None
+
+            # очистка None/пустых для brend/manu
+            def _label_or_default(s, default_txt):
+                return (s.astype("string").fillna("").str.strip()
+                        .replace({"None": "", "nan": ""})
+                        .map(lambda x: default_txt if x == "" else x))
+            df["brend"] = _label_or_default(df["brend"], "Бренд не указан")
+            df["manu"]  = _label_or_default(df["manu"],  "Произв. не указан")
+
+            df["date"]     = pd.to_datetime(df["date"], errors="coerce")
+            df["cr"]       = pd.to_numeric(df["cr"], errors="coerce").fillna(0)
+            df["quant_cr"] = pd.to_numeric(df["quant_cr"], errors="coerce").fillna(0)
+            df = df[df["cr"] != 0]
+            if df.empty:
+                return open_out, [], [], "", [], [], "", []
+
+            # диапазон дат
+            mode = mode or "last"
+            if mode == "last":
+                last_date  = df["date"].max()
+                start      = last_date.replace(day=1)
+                next_start = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+                df = df[(df["date"] >= start) & (df["date"] < next_start)]
+
+            df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+
+            # общие утилиты
+            NBSP = "\u202F"
+            def fmt_rub0(x): return f"₽{int(round(float(x))):,}".replace(",", NBSP)
+
+            palette = ["blue.6","teal.6","grape.6","orange.6","cyan.6","red.6","lime.6","violet.6","indigo.6","pink.6"]
+            TOP_N = 10
+
+            def build_donut(df_, key_col, other_label="Прочее"):
+                pie = (df_.groupby(key_col, as_index=False)["cr"].sum()
+                        .sort_values("cr", ascending=False))
+                if len(pie) > TOP_N:
+                    other = float(pie["cr"].iloc[TOP_N:].sum())
+                    pie   = pd.concat([pie.head(TOP_N), pd.DataFrame([{key_col: other_label, "cr": other}])], ignore_index=True)
+                total = float(pie["cr"].sum()) or 1.0
+
+                data   = []
+                legend = []
+                for i, r in pie.reset_index(drop=True).iterrows():
+                    name  = str(r[key_col])
+                    value = float(r["cr"])
+                    pct   = value/total*100.0
+                    color = palette[i % len(palette)]
+
+                    data.append({"name": name, "value": value, "color": color})
+                    legend.append(
+                        dmc.Group(
+                            gap="xs", wrap=False, align="center",
+                            children=[
+                                dmc.ThemeIcon(radius="xl", size=10, variant="filled", color=color),
+                                dmc.Text(f"{name} — {fmt_rub0(value)} ({pct:.1f}%)",
+                                        size="sm",
+                                        style={"whiteSpace":"nowrap","overflow":"hidden","textOverflow":"ellipsis"}),
+                            ],
+                        )
+                    )
+                return data, fmt_rub0(total), legend
+
+            # пончик 1: по категориям
+            df_cat = df.assign(cat=df["cat"].astype("string").fillna("").str.strip()
+                            .replace({"": "Категория не указана"}))
+            cat_data, cat_center, cat_legend = build_donut(df_cat, "cat")
+
+            # пончик 2: по производителям
+            manu_data, manu_center, manu_legend = build_donut(df, "manu")
+
+            # rowData для грида
+            row_out = df[needed].to_dict("records")
+
+            return open_out, row_out, cat_data, cat_center, cat_legend, manu_data, manu_center, manu_legend
+        
+        
+        
+        ### ПЕРЕКЛЮЧЕНИЕ ТЕМЫ У ТАБЛИЧКИ
+        @app.callback(
+            Output("returns_grid", "className"),
+            Input("theme_switch", "checked"),
+        )
+        def toggle_returns_grid_theme(checked):
+            return "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
+
+

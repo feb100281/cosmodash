@@ -125,6 +125,73 @@
     font-weight: bold;
 }
 
+/* ФОРМАТИРОВАНИЕ ТАБЛИЦЫ Ag grid */
+
+/* 1) Определим общий цвет для ИТОГО/шапки — разный для light/dark */
+[data-mantine-color-scheme="light"]  {
+  --pln-total-bg: var(--mantine-color-blue-0);
+  --pln-total-border: color-mix(in srgb, var(--mantine-color-text) 12%, transparent);
+}
+
+[data-mantine-color-scheme="dark"]  {
+  --pln-total-bg: color-mix(in srgb, var(--mantine-color-blue-8) 22%, var(--mantine-color-body));
+  --pln-total-border: color-mix(in srgb, var(--mantine-color-text) 18%, transparent);
+}
+
+/* 2) Итоговая строка (ты уже вешаешь класс ag-total-bg через cellClassRules) */
+.ag-cell.ag-total-bg {
+  background-color: var(--pln-total-bg) !important;
+  font-weight: 700 !important;
+  border-top: 1px solid var(--pln-total-border) !important;
+}
+
+/* 3) Шапка грида: групповые и обычные заголовки */
+.ag-header,
+.ag-header-viewport,
+.ag-header-container,
+.ag-header-row,
+.ag-header-cell,
+.ag-header-group-cell {
+  background-color: var(--pln-total-bg) !important;
+}
+
+/* 4) Разделители и нижняя граница шапки — аккуратные */
+ .ag-header-cell,
+.ag-header-group-cell {
+  border-bottom: 1px solid var(--pln-total-border) !important;
+  border-right: 1px solid color-mix(in srgb, var(--mantine-color-text) 8%, transparent) !important;
+}
+
+/*  Чуть подчеркнём подписи в заголовках */
+.ag-header-cell-label {
+  font-weight: 600;
+}
+
+/* Первая колонка (ячейки данных) — тот же фон, лёгкая правая граница */
+.ag-firstcol-bg {
+  background-color: var(--pln-total-bg) !important;
+  font-weight: 600 !important;
+  border-right: 1px solid var(--pln-total-border) !important;
+}
+
+/* Если колонка закреплена слева — тоже ок (на всякий случай) */
+.ag-pinned-left-cols-container .ag-firstcol-bg {
+  background-color: var(--pln-total-bg) !important;
+}
+
+/* центр для обычных заголовков */
+.ag-theme-alpine .ag-header-cell.ag-center-header .ag-header-cell-label {
+  justify-content: center;         /* у header label — flex, выравниваем по центру */
+  text-align: center;
+}
+
+/* центр для групповых заголовков */
+.ag-theme-alpine .ag-header-group-cell.ag-center-header .ag-header-group-cell-label {
+  justify-content: center;
+  text-align: center;
+}
+
+
 
 
 
