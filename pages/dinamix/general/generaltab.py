@@ -163,7 +163,7 @@ class AreaChartModal:
         date_obj = "d3.timeParse('%Y-%m-%dT%H:%M:%S')(params.data.date)"
         cols = [
             {"headerName": "Номер заказа", 
-             "field": "client_order_number"},
+             "field": "client_order_number", "cellClass": "ag-firstcol-bg",     "pinned": "left",},
             {
             "headerName": "Дата",
             "field": "date",
@@ -176,7 +176,7 @@ class AreaChartModal:
             {
             "headerName": "Сумма",
             "field": "dt",
-            "valueFormatter": {"function": "RUB(params.value)"}
+            "valueFormatter": {"function": "RUB(params.value)"}, "cellClass": "ag-firstcol-bg",
             #"valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''" },
             },
             {
@@ -186,7 +186,7 @@ class AreaChartModal:
                     "function": "FormatWithUnit(params.value,'ед')"
                 },
             },
-            {"headerName": "Манеджер", "field": "manager"},
+            {"headerName": "Манеджер", "field": "manager",     "pinned": "right",},
         ]
 
         return dmc.Stack([

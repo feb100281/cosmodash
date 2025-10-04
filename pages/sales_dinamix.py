@@ -55,6 +55,9 @@ COLS = [
     'store_region',
     'quant_dt',
     'quant_cr',
+    'fullname',
+    'manu',
+    'brend',
 ]
 
 
