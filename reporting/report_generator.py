@@ -11,7 +11,7 @@ from dash import html
 
 from .bs import THEMES
 from .icons import Streamline, ColorEmoji, Solar
-from .bscomponents import Badge, ProgressBar
+from .bscomponents import Badge, ProgressBar, ProgressBarRelative
 
 BASE_DIR = Path(__file__).parent
 TEMPLATE_DIR = BASE_DIR / "templates"
@@ -33,6 +33,7 @@ class Icon:
 class BS:
     Badge = Badge
     ProgressBar = ProgressBar
+    ProgressBarRelative = ProgressBarRelative
 
 
 class ReportComponent:
