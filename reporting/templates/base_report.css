@@ -1,0 +1,57 @@
+@page {
+  margin: 3cm 0 2cm 0; /* поля: сверху/справа/снизу/слева */
+  
+  @top-center {
+  content: var(--logo-img);  
+  background: linear-gradient(to bottom, var(--bs-primary) 2.5cm, var(--bs-body-bg) 0.5cm) no-repeat;
+  width: 100%;
+  
+}
+  @bottom-center {
+    content: "Страница " counter(page) " / " counter(pages);
+    font-family: var(--theme-font);
+    font-size: 10pt;
+    background: var(--bs-body-bg);
+    width: 100%;
+    color: var(--bs-body-color);
+  }
+}
+
+
+body {
+    font-family: var(--theme-font);
+    font-size: var(--fontsize);
+    
+}
+
+article {
+    margin: 0.5cm 0cm 0.5cm 0cm;
+    text-align: justify;
+}
+
+.topic_section {
+    margin: 0.5cm 2cm 0.5cm 2cm;
+    color: var(--bs-body-color);
+}
+
+.table th,
+.table td {
+    text-align: center;
+    vertical-align: middle; /* чтобы текст был по центру по вертикали */
+    padding: 2px 4px;       /* уменьшаем внутренние отступы */
+           /* можно чуть уменьшить текст */
+    color: var(--bs-body-color);
+}
+
+/* Чтобы заголовок тоже был пониже */
+.table thead th {
+    padding: 3px 4px;
+    text-align: center;
+    color: var(--bs-body-color);
+}
+section.two-columns {
+  columns: 2;
+  column-gap: 0.5cm;
+  padding-top: 1cm;
+  text-align: justify;
+}
