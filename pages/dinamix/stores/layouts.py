@@ -623,6 +623,7 @@ class StoresComponents:
             centered=True,
             overlayProps={"opacity": 0.55, "blur": 2},
             children=[
+                
                 # ——— ПОНЧИК — распределение возвратов  ———
 
                 dmc.SimpleGrid(
@@ -1377,10 +1378,10 @@ class StoresComponents:
                         dmc.GridCol(dmc.Text(f"{label}:", c="inherit"), span=3),
                         dmc.GridCol(curr_cell,  span=3, style={"textAlign": "left"}),
                         dmc.GridCol(base_cell,  span=3, style={"textAlign": "left"}),
-                        dmc.GridCol(delta_cell, span=2, style={"textAlign": "left"}),
-                        dmc.GridCol(dmc.Box(spark, style={"width": "100%"}), span=1),
+                        dmc.GridCol(delta_cell, span=3, style={"textAlign": "left"}),
+                        # dmc.GridCol(dmc.Box(spark, style={"width": "100%"}), span=1),
                     ]),
-                    style={"listStyleType": "disc", "margin": 0, "paddingLeft": "1rem"}
+          
                 )
 
             # спарклайны
