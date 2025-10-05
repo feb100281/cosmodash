@@ -636,7 +636,14 @@ class StoresComponents:
             size="90%",
             centered=True,
             overlayProps={"opacity": 0.55, "blur": 2},
-            children=[
+            children=dmc.Box([
+                
+                dmc.LoadingOverlay(
+                id="returns_loading",
+                visible=False,
+                zIndex=1000,
+                overlayProps={"opacity": 0.6, "blur": 2},
+            ),
                 
                 # ——— ПОНЧИК — распределение возвратов  ———
 
@@ -818,7 +825,7 @@ class StoresComponents:
                         dangerously_allow_code=True
                     ),
                 ),
-            ],
+            ]),
         )
 
 
@@ -1345,11 +1352,11 @@ class StoresComponents:
                     return None
 
             # визуалка
-            def spark_color(curr_val, base_val, good_when_up: bool):
-                if curr_val is None or base_val is None: return "gray"
-                if math.isclose(curr_val, base_val, rel_tol=0.005, abs_tol=1e-9): return "gray"
-                up = curr_val > base_val
-                return "teal" if ((up and good_when_up) or ((not up) and (not good_when_up))) else "red"
+            # def spark_color(curr_val, base_val, good_when_up: bool):
+            #     if curr_val is None or base_val is None: return "gray"
+            #     if math.isclose(curr_val, base_val, rel_tol=0.005, abs_tol=1e-9): return "gray"
+            #     up = curr_val > base_val
+            #     return "teal" if ((up and good_when_up) or ((not up) and (not good_when_up))) else "red"
 
             def delta_node(curr, prev, *, good_up=True, pct_mode=True, is_money=False, is_pct_metric=False):
                 if prev in (None, 0) or (isinstance(prev, float) and math.isclose(prev, 0.0)):
@@ -1411,7 +1418,7 @@ class StoresComponents:
                 ])
 
             # грид-строка: label(3) | curr(3) | base(3) | delta(2) | spark(1)
-            def metric_row_grid(label, *, curr_cell, base_cell, delta_cell, spark):
+            def metric_row_grid(label, *, curr_cell, base_cell, delta_cell):
                 return html.Li(
                     dmc.Grid(gutter="xs", align="center", columns=12, children=[
                         dmc.GridCol(dmc.Text(f"{label}:", c="inherit"), span=3),
@@ -1424,10 +1431,10 @@ class StoresComponents:
                 )
 
             # спарклайны
-            def spark_for(col, *, good_up=True):
-                vals = series(col)
-                color = spark_color(sval(vals, current_eom), sval(vals, base_eom), good_when_up=good_up)
-                return dmc.Sparkline(data=vals, w="100%", h=24, color=color, fillOpacity=0.5, curveType="Linear", strokeWidth=2)
+            # def spark_for(col, *, good_up=True):
+            #     vals = series(col)
+            #     color = spark_color(sval(vals, current_eom), sval(vals, base_eom), good_when_up=good_up)
+            #     return dmc.Sparkline(data=vals, w="100%", h=24, color=color, fillOpacity=0.5, curveType="Linear", strokeWidth=2)
 
             # коэффициент возвратов
             def ratio_eom(eom_):
@@ -1442,7 +1449,7 @@ class StoresComponents:
                     base_cell = cell_money('amount', base_eom),
                     delta_cell= delta_node(at('amount', current_eom), at('amount', base_eom),
                                         good_up=True, pct_mode=(delta_mode=='pct'), is_money=True),
-                    spark     = spark_for('amount', good_up=True)
+                    # spark     = spark_for('amount', good_up=True)
                 ),
                 metric_row_grid(
                     "Общие продажи",
@@ -1450,7 +1457,7 @@ class StoresComponents:
                     base_cell = cell_money('dt', base_eom),
                     delta_cell= delta_node(at('dt', current_eom), at('dt', base_eom),
                                         good_up=True, pct_mode=(delta_mode=='pct'), is_money=True),
-                    spark     = spark_for('dt', good_up=True)
+                    # spark     = spark_for('dt', good_up=True)
                 ),
                 metric_row_grid(
                     "Кол-во заказов",
@@ -1458,7 +1465,7 @@ class StoresComponents:
                     base_cell = cell_int('orders', base_eom),
                     delta_cell= delta_node(at('orders', current_eom), at('orders', base_eom),
                                         good_up=True, pct_mode=(delta_mode=='pct'), is_money=False),
-                    spark     = spark_for('orders', good_up=True)
+                    # spark     = spark_for('orders', good_up=True)
                 ),
             ]
             left_block = dmc.Stack(gap=6, children=[
@@ -1474,7 +1481,7 @@ class StoresComponents:
                     base_cell = cell_money('cr', base_eom),
                     delta_cell= delta_node(at('cr', current_eom), at('cr', base_eom),
                                         good_up=False, pct_mode=(delta_mode=='pct'), is_money=True),
-                    spark     = spark_for('cr', good_up=False)
+                    # spark     = spark_for('cr', good_up=False)
                 ),
                 metric_row_grid(
                     "Возвраты шт",
@@ -1482,7 +1489,7 @@ class StoresComponents:
                     base_cell = cell_int('quant_cr', base_eom),
                     delta_cell= delta_node(at('quant_cr', current_eom), at('quant_cr', base_eom),
                                         good_up=False, pct_mode=(delta_mode=='pct'), is_money=False),
-                    spark     = spark_for('quant_cr', good_up=False)
+                    # spark     = spark_for('quant_cr', good_up=False)
                 ),
                 metric_row_grid(
                     "Коэф. возвратов",
@@ -1496,11 +1503,11 @@ class StoresComponents:
                         is_money=False,
                         is_pct_metric=True                # ← ключевая строчка: п.п. в ABS
                     ),
-                    spark     = dmc.Sparkline(
-                        data=ratio_series(), w="100%", h=24,
-                        color=spark_color(sval(ratio_series(), current_eom), sval(ratio_series(), base_eom), good_when_up=False),
-                        fillOpacity=0.5, curveType="Linear", strokeWidth=2
-                    )
+                    # spark     = dmc.Sparkline(
+                    #     data=ratio_series(), w="100%", h=24,
+                    #     color=spark_color(sval(ratio_series(), current_eom), sval(ratio_series(), base_eom), good_when_up=False),
+                    #     fillOpacity=0.5, curveType="Linear", strokeWidth=2
+                    # )
                 ),
 
             ]
@@ -2102,10 +2109,25 @@ class StoresComponents:
         
         
         # === ОТКРЫТИЕ МОДАЛКИ: сразу показываем последний месяц ===
-
-
+        
+        # ---  колбэк открытия: мгновенно показать модалку и анимацию
         @app.callback(
             Output("returns_modal", "opened"),
+            Output("returns_loading", "visible"),
+            Input("open_returns_modal", "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def open_returns_modal(n):
+            if not n:                          # None или 0 -> игнор
+                raise PreventUpdate
+            return True, True                  # открыть и показать анимацию
+
+
+
+
+        # --- 2)  колбэк: загрузить данные и выключить оверлей
+
+        @app.callback(
             Output("returns_grid", "rowData"),
             # donut by category
             Output("returns_cat_donut", "data"),
@@ -2115,23 +2137,21 @@ class StoresComponents:
             Output("returns_manu_donut", "data"),
             Output("returns_manu_donut", "chartLabel"),
             Output("returns_manu_legend", "children"),
-            Input("open_returns_modal", "n_clicks"),
-            Input("returns_range", "value"),            # "last" | "all"
+            # выключаем оверлей в конце — помечаем как дубликат
+            Output("returns_loading", "visible", allow_duplicate=True),
+            Input("returns_modal", "opened"),
+            Input("returns_range", "value"),
             State("df_returns_store", "data"),
-            State("returns_modal", "opened"),
             prevent_initial_call=True,
         )
-        def open_or_update_returns(n_clicks, mode, df_data, is_opened):
+        def open_or_update_returns(is_opened, mode, df_data):
             import pandas as pd, numpy as np
-
-            trig = (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else None)
-            open_out = True if trig == "open_returns_modal" else is_opened
-            if not n_clicks and not is_opened:
+            if not is_opened:
                 raise PreventUpdate
 
             df = pd.DataFrame(df_data or [])
             if df.empty:
-                return open_out, [], [], "", [], [], "", []
+                return [], [], "", [], [], "", [], False
 
             needed = ["date","client_order_number","manager","cr","quant_cr",
                     "store_gr_name","subcat","cat","fullname","brend","manu"]
@@ -2139,7 +2159,6 @@ class StoresComponents:
                 if c not in df.columns:
                     df[c] = None
 
-            # очистка None/пустых для brend/manu
             def _label_or_default(s, default_txt):
                 return (s.astype("string").fillna("").str.strip()
                         .replace({"None": "", "nan": ""})
@@ -2152,9 +2171,8 @@ class StoresComponents:
             df["quant_cr"] = pd.to_numeric(df["quant_cr"], errors="coerce").fillna(0)
             df = df[df["cr"] != 0]
             if df.empty:
-                return open_out, [], [], "", [], [], "", []
+                return [], [], "", [], [], "", [], False
 
-            # диапазон дат
             mode = mode or "last"
             if mode == "last":
                 last_date  = df["date"].max()
@@ -2164,57 +2182,42 @@ class StoresComponents:
 
             df["date"] = df["date"].dt.strftime("%Y-%m-%d")
 
-            # общие утилиты
             NBSP = "\u202F"
             def fmt_rub0(x): return f"₽{int(round(float(x))):,}".replace(",", NBSP)
-
             palette = ["blue.6","teal.6","grape.6","orange.6","cyan.6","red.6","lime.6","violet.6","indigo.6","pink.6"]
             TOP_N = 10
 
             def build_donut(df_, key_col, other_label="Прочее"):
-                pie = (df_.groupby(key_col, as_index=False)["cr"].sum()
-                        .sort_values("cr", ascending=False))
+                pie = (df_.groupby(key_col, as_index=False)["cr"].sum().sort_values("cr", ascending=False))
                 if len(pie) > TOP_N:
                     other = float(pie["cr"].iloc[TOP_N:].sum())
                     pie   = pd.concat([pie.head(TOP_N), pd.DataFrame([{key_col: other_label, "cr": other}])], ignore_index=True)
                 total = float(pie["cr"].sum()) or 1.0
 
-                data   = []
-                legend = []
+                data, legend = [], []
                 for i, r in pie.reset_index(drop=True).iterrows():
-                    name  = str(r[key_col])
-                    value = float(r["cr"])
-                    pct   = value/total*100.0
-                    color = palette[i % len(palette)]
-
+                    name  = str(r[key_col]); value = float(r["cr"])
+                    pct   = value/total*100.0; color = palette[i % len(palette)]
                     data.append({"name": name, "value": value, "color": color})
                     legend.append(
-                        dmc.Group(
-                            gap="xs", wrap=False, align="center",
-                            children=[
-                                dmc.ThemeIcon(radius="xl", size=10, variant="filled", color=color),
-                                dmc.Text(f"{name} — {fmt_rub0(value)} ({pct:.1f}%)",
-                                        size="sm",
-                                        style={"whiteSpace":"nowrap","overflow":"hidden","textOverflow":"ellipsis"}),
-                            ],
-                        )
+                        dmc.Group(gap="xs", wrap=False, align="center", children=[
+                            dmc.ThemeIcon(radius="xl", size=10, variant="filled", color=color),
+                            dmc.Text(f"{name} — {fmt_rub0(value)} ({pct:.1f}%)",
+                                    size="sm",
+                                    style={"whiteSpace":"nowrap","overflow":"hidden","textOverflow":"ellipsis"}),
+                        ])
                     )
                 return data, fmt_rub0(total), legend
 
-            # пончик 1: по категориям
             df_cat = df.assign(cat=df["cat"].astype("string").fillna("").str.strip()
                             .replace({"": "Категория не указана"}))
             cat_data, cat_center, cat_legend = build_donut(df_cat, "cat")
-
-            # пончик 2: по производителям
             manu_data, manu_center, manu_legend = build_donut(df, "manu")
 
-            # rowData для грида
             row_out = df[needed].to_dict("records")
 
-            return open_out, row_out, cat_data, cat_center, cat_legend, manu_data, manu_center, manu_legend
-        
-        
+            return row_out, cat_data, cat_center, cat_legend, manu_data, manu_center, manu_legend, False
+
         
         ### ПЕРЕКЛЮЧЕНИЕ ТЕМЫ У ТАБЛИЧКИ
         @app.callback(
