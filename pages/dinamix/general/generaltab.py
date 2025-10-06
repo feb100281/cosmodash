@@ -1018,17 +1018,55 @@ def registed_callbacks(app):
 
         return series
 
+    # @app.callback(
+    #     Output({"type": av_check_modal_type, "index": MATCH}, "opened"),
+    #     Output({"type": av_check_modal_type, "index": MATCH}, "children"),
+    #     Input({"type": av_check_chart_type, "index": MATCH}, "clickData"),
+    #     State({"type": av_check_modal_type, "index": MATCH}, "opened"),
+    #     prevent_initial_call=True,
+    # )
+    # def av_check_report_modal(clickData, opened):
+    #     data = AreaChartModal(clickData["eom"]).update_modal()
+
+    #     return not opened, data
+    
+    
+
+
     @app.callback(
         Output({"type": av_check_modal_type, "index": MATCH}, "opened"),
         Output({"type": av_check_modal_type, "index": MATCH}, "children"),
+        Output({"type": av_check_chart_type, "index": MATCH}, "clickData"),  # сбросим при закрытии
         Input({"type": av_check_chart_type, "index": MATCH}, "clickData"),
-        State({"type": av_check_modal_type, "index": MATCH}, "opened"),
+        Input({"type": av_check_modal_type, "index": MATCH}, "opened"),       # слушаем закрытие
         prevent_initial_call=True,
     )
-    def av_check_report_modal(clickData, opened):
-        data = AreaChartModal(clickData["eom"]).update_modal()
+    def av_check_report_modal(clickData, modal_opened):
+        trig = dash.ctx.triggered_id  # dash.callback_context в старых версиях
 
-        return not opened, data
+        # 1) Кликнули по графику → открыть и заполнить
+        if isinstance(trig, dict) and trig.get("type") == av_check_chart_type:
+            if not clickData:
+                return no_update, no_update, no_update
+
+            # Надёжно извлечь eom из разных вариантов структуры clickData
+            payload0 = (clickData.get("activePayload") or [{}])[0]
+            eom = (
+                payload0.get("eom")
+                or (payload0.get("payload") or {}).get("eom")
+                or clickData.get("eom")
+            )
+
+            data = AreaChartModal(eom).update_modal()
+            return True, data, no_update   # всегда открываем, clickData пока не трогаем
+
+        # 2) Закрыли модалку крестиком/оверлеем → сбрасываем clickData
+        if modal_opened is False:
+            return no_update, no_update, None
+
+        # 3) Остальные случаи — без изменений
+        return no_update, no_update, no_update
+
 
     
     @app.callback(
