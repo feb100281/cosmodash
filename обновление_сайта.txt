@@ -8,7 +8,8 @@ git pull origin daria (или main что еще любую свою ветку 
 sudo pkill -f gunicorn
 
 
-
+Перезагрузка сайта
+nohup gunicorn wsgi:server -b 0.0.0.0:8050 > gunicorn.log 2>&1 &
 
 
 
