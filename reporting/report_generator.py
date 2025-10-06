@@ -104,6 +104,13 @@ class PlotlyFigure(ReportComponent):
         return f'<img src="data:image/{self.format};base64,{b64}" class="{self.css_class}"/>'
 
 
+class HtmlRender(ReportComponent):
+    def __init__(self,html_str):
+        self.html_str = html_str
+    def render(self):
+        return f'<div {self.html_str}</div>'
+        
+
 class ReportGenerator:
     def __init__(
         self,

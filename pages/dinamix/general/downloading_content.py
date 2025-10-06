@@ -4,6 +4,7 @@ from reporting.report_generator import (
     DataTable,
     Icon,
     BS,
+    HtmlRender,
 )
 import pandas as pd
 import numpy as np
@@ -69,6 +70,7 @@ def pdf_data_click(df_id=None):
     month_sales.columns = month_sales.columns.droplevel(0)
 
     cols = month_sales.columns
+    html_table = ""
 
     if len(cols) < 3:
         last_col = cols[1]
@@ -84,6 +86,11 @@ def pdf_data_click(df_id=None):
                 "text-bg-info", "", x, value_max=max_percent
             ).render
         )
+        html_table = (month_sales.style
+                      .format({1:'{:.2f}'})
+                      
+                      
+                      ).to_html()
 
     elif len(cols) >= 3:
         cum_cols = cols[-2:]
@@ -119,6 +126,16 @@ def pdf_data_click(df_id=None):
                 color_neg="bg-danger",
             ).render
         )
+        html_table = (month_sales.style
+                      .format({
+                          2024:'{:.2f}',
+                          2025:'{:.2f}',
+                               })
+                      
+                     
+                      
+                      
+                      ).hide(axis="index").to_html()
 
     table = month_sales.to_markdown(index=False)
 
@@ -158,6 +175,8 @@ def pdf_data_click(df_id=None):
 
 """
     par1 = MarkdownBlock(md)
+    tabl = HtmlRender(html_table)
     dnl_content.add_component(par1)
+    dnl_content.add_component(tabl)
 
     return dnl_content
