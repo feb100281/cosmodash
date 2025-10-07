@@ -31,6 +31,7 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
+from pages.segment_analisis import SEGMENTS_LAYOUT, SEGMENT_DF_STORE, SEGMENTS_CALLBACKS
 from components import NoData, InDevNotice, ClickOnNotice
 from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
 
@@ -171,9 +172,10 @@ class MainWnidow:
             ),
             dmc.AppShellMain([page_container,
                               html.Div(id="dummy-theme-output", style={"display": "none"}),                              
-                              sd_components().df_store,
+                              sd_components().df_store,                              
                               dcc.Store(id='pdf_download', storage_type='memory'),
-                              PREVIEW_MODAL
+                              PREVIEW_MODAL,
+                              SEGMENT_DF_STORE,
                                                          
                               ]),
         ],
@@ -270,11 +272,12 @@ def main_app():
 
     MainWnidow().main_page_callbacks(app)
     sd_components().register_callbacks(app)
+    SEGMENTS_CALLBACKS.register_callbacks(app)
     preview_callbacks(app)
 
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
-    dash.register_page("Сегментный анализ", path="/Segments", layout=InDevNotice().in_dev_conteines)
+    dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
     dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
 
     app.layout = MainWnidow().page_layout

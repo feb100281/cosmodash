@@ -222,6 +222,7 @@ def to_str_date(d):
 
 def load_column_range(column_name, start_eom, end_eom):
     chunks = pickle.loads(r.get(f"mydf:{column_name}:__chunks__"))
+    
 
     # приводим start/end к строкам
     start_str = to_str_date(start_eom)
@@ -229,16 +230,21 @@ def load_column_range(column_name, start_eom, end_eom):
 
     # приводим все chunks к строкам
     chunks_str = [to_str_date(c) for c in chunks]
+    
 
     # фильтруем
     needed_chunks = [c for c in chunks_str if start_str <= c <= end_str]
+    
 
     series_list = []
     for chunk in needed_chunks:
+        
         data = r.get(f"mydf:{column_name}:{chunk}")
+        
+        
         if data:
             series_list.append(pickle.loads(data))
-
+   
     if series_list:
         return pd.concat(series_list, ignore_index=True)
     else:
@@ -247,6 +253,7 @@ def load_column_range(column_name, start_eom, end_eom):
 
 def load_columns_df(columns, start_eom, end_eom):
     data = {}
+    
 
     for col in columns:
         data[col] = load_column_range(col, start_eom, end_eom)
