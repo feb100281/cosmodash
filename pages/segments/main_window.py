@@ -5,166 +5,248 @@ import json
 import dash_ag_grid as dag
 
 
-from data import (load_columns_df, load_df_from_redis, delete_df_from_redis, save_df_to_redis)
-from components import MonthSlider, DATES
-from dash import (
-    dcc,
-    Input,
-    Output,
-    State,
-    no_update
+from data import (
+    load_columns_df,
+    load_df_from_redis,
+    delete_df_from_redis,
+    save_df_to_redis,
 )
-from .db_queries import get_items
+from components import MonthSlider, DATES
+from dash import dcc, Input, Output, State, no_update
+from .db_queries import get_items, fletch_dataset
+from .drawler import CATS_MANAGEMENT
 
 COLS = [
-    'date',
-    'eom',
-    'init_date',
-    'parent_cat',
-    'parent_cat_id',
-    'cat',
-    'cat_id',
-    'subcat',
-    'subcat_id',
-    'item_id',
-    'fullname',
-    'brend',
-    'manu',
-    'amount',
-    'quant'
+    "date",
+    "eom",
+    "init_date",
+    "parent_cat",
+    "parent_cat_id",
+    "cat",
+    "cat_id",
+    "subcat",
+    "subcat_id",
+    "item_id",
+    "fullname",
+    "brend",
+    "manu",
+    "amount",
+    "quant",
 ]
+
 
 def id_to_months(start, end):
     return DATES[start].strftime("%Y-%m-%d"), DATES[end].strftime("%Y-%m-%d")
 
+
 class SegmentMainWindow:
     def __init__(self):
-        
+
         self.title = dmc.Title("Сегментный аналих", order=1, c="blue")
-        self.memo = dmc.Text("Данный раздел предоставляет аналитику по номенклатурам продукции", size="xs")
-        
+        self.memo = dmc.Text(
+            "Данный раздел предоставляет аналитику по номенклатурам продукции",
+            size="xs",
+        )
+
         # self.mslider_id = {"type":"segment_analisys_monthslider", "index":'1'}
         self.mslider_id = "segment_analisys_monthslider"
         self.tree_conteiner_id = "segment_analisys_tree_container_very_unique_id"
         self.details_conteiner_id = "segment_analisys_details_container_very_unique_id"
-        self.mslider = MonthSlider(id=self.mslider_id)        
-        
-        self.tree_id = 'segments_tree_id'    
-        self.tree = dmc.Tree(
-            id = self.tree_id,
-            data = [],
-            expandedIcon=DashIconify(icon="line-md:chevron-right-circle",width=20),
-            collapsedIcon=DashIconify(icon="line-md:arrow-up-circle",width=20),
-            checkboxes=True,
-            
-        )
-        
+        self.tree_id = "segments_tree_id"
         self.df_store_id = "df_segment_store"
-        self.df_store = dcc.Store(id=self.df_store_id, storage_type="session")
-        
         self.last_update_lb_id = "last_update_segments_lb"
+        self.group_box_id = "segment_group_box_id_unique"
+        self.assing_cat = "segments_assign_cat_action_button"
+        self.assing_manu = "segments_assign_manu_action_button"
+        self.assing_brend = "segments_assign_brend_action_button"
+
+        self.mslider = MonthSlider(id=self.mslider_id)
+        self.tree = dmc.Tree(
+            id=self.tree_id,
+            data=[],
+            expandedIcon=DashIconify(icon="line-md:chevron-right-circle", width=20),
+            collapsedIcon=DashIconify(icon="line-md:arrow-up-circle", width=20),
+            checkboxes=True,
+        )
+
+        group_box_options = [
+            {"value": "parent_cat", "label": "Группа"},
+            {"value": "brend", "label": "Бренд"},
+            {"value": "manu", "label": "Производитель"},
+        ]
+
+        self.group_box = dmc.SegmentedControl(
+            id=self.group_box_id,
+            data=group_box_options,
+            value="parent_cat",
+        )
+
+        self.df_store = dcc.Store(id=self.df_store_id, storage_type="session")
+
         self.last_update_lb = dcc.Loading(
-            dmc.Badge(size="md", variant="light", radius="xs", 	color="red", id=self.last_update_lb_id)
+            dmc.Badge(
+                size="md",
+                variant="light",
+                radius="xs",
+                color="red",
+                id=self.last_update_lb_id,
+            )
         )
         
-    def update_ag(self, df, rrgrid_className):
-        df:pd.DataFrame = df
-        df['amount'] = df.dt - df.cr
-        df['quant'] = df['quant_dt'] - df['quant_cr']
-        df['ret_ratio'] = df.amount / df.dt * 100        
-        
-        cols = [
-            {"headerName": "Номенклатура", 
-             "field": "fullname"
-             },#, "cellClass": "ag-firstcol-bg",     "pinned": "left",},
-            {
-            "headerName": "Дата инициализации",
-            "field": "init_date",
-            "valueFormatter": {"function": "RussianDate(params.value)"}
-            },
-            {
-            "headerName": "Последняя продажа",
-            "field": "last_sales_date",
-            "valueFormatter": {"function": "RussianDate(params.value)"}
-            },
-            {
-            "headerName": "Выручка",
-            "field": "amount",
-            "valueFormatter": {"function": "RUB(params.value)"}, "cellClass": "ag-firstcol-bg",
-            },
-            {
-            "headerName": "Всего продано",
-            "field": "quant",
-            "valueFormatter": {
-                "function": "FormatWithUnit(params.value,'ед')"
-            },
-            },
-            {
-            "headerName": "Процент возвратов",
-            "field": "quant",
-            "valueFormatter": {
-                "function": "FormatWithUnit(params.value,'%')"
-            },
-            },
-            {"headerName": "Бренд", 
-             "field": "brend"
-             },
-            {"headerName": "Производитель", 
-             "field": "manu"
-             },
-        ]
+        # Делаем иконки для действий с базой данных
+        self.actions = dmc.ActionIconGroup(
+            [
+                dmc.ActionIcon(
+                    variant="default",
+                    size="lg",
+                    children=DashIconify(icon="mdi:file-tree-outline", width=20),
+                    id = self.assing_cat,   
+                    disabled=True,                 
+                ),
+                dmc.ActionIcon(
+                    variant="default",
+                    size="lg",
+                    children=DashIconify(icon="mdi:teddy-bear", width=20),
+                    id = self.assing_brend,
+                    disabled=True, 
+                ),
+                dmc.ActionIcon(
+                    variant="default",
+                    size="lg",
+                    children=DashIconify(icon="mdi:manufacturing", width=20),
+                    id = self.assing_manu,
+                    disabled=True, 
+                ),
+            ],
+            orientation="horizontal",
             
-        return dmc.Stack([
+            
+        )
+
+    def update_ag(self, df, rrgrid_className):
+        df: pd.DataFrame = df
+        df["amount"] = df.dt - df.cr
+        df["quant"] = df["quant_dt"] - df["quant_cr"]
+        # Тут не уверен как считать
+        df["ret_ratio"] = df.quant_cr / df.quant_dt * 100
+
+        cols = [
+            {
+                "headerName": "Номенклатура",
+                "field": "fullname",
+            },  # , "cellClass": "ag-firstcol-bg",     "pinned": "left",},
+            {
+                "headerName": "Дата инициализации",
+                "field": "init_date",
+                "valueFormatter": {"function": "RussianDate(params.value)"},
+            },
+            {
+                "headerName": "Последняя продажа",
+                "field": "last_sales_date",
+                "valueFormatter": {"function": "RussianDate(params.value)"},
+            },
+            {
+                "headerName": "Выручка",
+                "field": "amount",
+                "valueFormatter": {"function": "RUB(params.value)"},
+                "cellClass": "ag-firstcol-bg",
+            },
+            {
+                "headerName": "Всего продано",
+                "field": "quant",
+                "valueFormatter": {"function": "FormatWithUnit(params.value,'ед')"},
+            },
+            {
+                "headerName": "Процент возвратов",
+                "field": "ret_ratio",
+                "valueFormatter": {"function": "FormatWithUnit(params.value,'%')"},
+            },
+            {"headerName": "Бренд", "field": "brend"},
+            {"headerName": "Производитель", "field": "manu"},
+        ]
+
+        return dmc.Stack(
+            [
                 dmc.Space(h=5),
-                dmc.Title(f"Выбранные позиции",order=4),
+                dmc.Title(f"Выбранные позиции", order=4),
                 dmc.Space(h=10),
-                dag.AgGrid(            
-                id="orders-grid",
-                rowData=df.to_dict("records"),
-                columnDefs=cols,
-                defaultColDef={
-                    "sortable": True,
-                    "filter": True,
-                    "resizable": True,
-                },
-                dashGridOptions={
-                    "rowSelection": "single",
-                    "pagination": True,
-                    "paginationPageSize": 20,
-                },
-                style={"height": "600px", "width": "100%"},
-                className=rrgrid_className,
-                dangerously_allow_code=True            
-            ),
-                
+                dag.AgGrid(
+                    id="orders-grid",
+                    rowData=df.to_dict("records"),
+                    columnDefs=cols,
+                    defaultColDef={
+                        "sortable": True,
+                        "filter": True,
+                        "resizable": True,
+                    },
+                    dashGridOptions={
+                        "rowSelection": "single",
+                        "pagination": True,
+                        "paginationPageSize": 20,
+                    },
+                    style={"height": "600px", "width": "100%"},
+                    className=rrgrid_className,
+                    dangerously_allow_code=True,
+                ),
             ]
-            )
-        
-        
-        
-    def data(self,start_eom,end_eom):        
-        df = load_columns_df(COLS,start_eom,end_eom)
-        df['parent_cat_id'] = df['parent_cat_id'].fillna(10_000_000)
-        
-        df['cat_id'] = df['cat_id'].fillna(10_000_000)
-        df['subcat_id'] = df['subcat_id'].fillna(10_000_000)
-        df['item_id'] = df['item_id'].fillna(10_000_001)
-        
+        )
+
+    def data(self, start_eom, end_eom):
+        df = load_columns_df(COLS, start_eom, end_eom)
+
+        return df
+
+    def maketree(self, df_id, group):
+
+        df = load_df_from_redis(df_id)
+
+        if group != "parent_cat":
+            df["parent_cat"] = df[group]
+            df["parent_cat_id"] = df[f"{group}_id"]
+            df["parent_cat"] = df["parent_cat"].fillna("Нет данных")
+            df["cat"] = df["cat"].fillna("Нет категории")
+            df["subcat"] = df["subcat"].fillna("Нет подкатегории")
+            df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
+            df["cat_id"] = df["cat_id"].fillna(10_000_000)
+            df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
+            df["item_id"] = df["item_id"].fillna(10_000_001)
+            df["cat_id"] = df["parent_cat_id"].astype(str) + df["cat_id"].astype(str)
+            df["subcat_id"] = df["cat_id"].astype(str) + df["subcat_id"].astype(str)
+
+        else:
+            df["parent_cat"] = df["parent_cat"].fillna("Нет группы")
+            df["cat"] = df["cat"].fillna("Нет категории")
+            df["subcat"] = df["subcat"].fillna("Нет подкатегории")
+            df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
+            df["cat_id"] = df["cat_id"].fillna(10_000_000)
+            df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
+            df["item_id"] = df["item_id"].fillna(10_000_001)
+
+        df["amount"] = df.dt - df.cr
+        df["quant"] = df.quant_dt - df.quant_cr
+
         df = df.pivot_table(
-            index=['parent_cat_id','parent_cat','cat_id','cat','subcat_id','subcat','fullname','item_id'],
+            index=[
+                "parent_cat_id",
+                "parent_cat",
+                "cat_id",
+                "cat",
+                "subcat_id",
+                "subcat",
+                "fullname",
+                "item_id",
+            ],
             # index='fullname',
-            values=['amount','quant'],
+            values=["amount", "quant"],
             aggfunc={
-                'amount':'sum',
-                'quant':'sum',
-                
-            }
+                "amount": "sum",
+                "quant": "sum",
+            },
         ).reset_index()
-        df['fullname'] = df['fullname'].apply(lambda x: x if len(x) <= 50 else x[:50] + '...')
-        
-        return  df
-    
-    def maketree(self, df):
+        df["fullname"] = df["fullname"].apply(
+            lambda x: x if len(x) <= 50 else x[:50] + "..."
+        )
+
         tree = []
 
         def find_or_create(lst, value, label):
@@ -176,16 +258,16 @@ class SegmentMainWindow:
                 "value": str(value),
                 "label": str(label),
                 "children": [],
-                "_count": 0  # внутренний счётчик
+                "_count": 0,  # внутренний счётчик
             }
             lst.append(node)
             return node
 
         for _, row in df.iterrows():
-            pid, pname = row['parent_cat_id'], row['parent_cat']
-            cid, cname = row['cat_id'], row['cat']
-            sid, sname = row['subcat_id'], row['subcat']
-            fullname = (row['item_id'], row['fullname'])
+            pid, pname = row["parent_cat_id"], row["parent_cat"]
+            cid, cname = row["cat_id"], row["cat"]
+            sid, sname = row["subcat_id"], row["subcat"]
+            fullname = (row["item_id"], row["fullname"])
 
             # Преобразуем 10_000_000 обратно в None
             cid = None if cid == 10_000_000 else cid
@@ -207,10 +289,9 @@ class SegmentMainWindow:
                 subcat_node = cat_node
 
             # 4 уровень — fullname
-            subcat_node["children"].append({
-                "value": str(fullname[0]),
-                "label": str(fullname[1])
-            })
+            subcat_node["children"].append(
+                {"value": str(fullname[0]), "label": str(fullname[1])}
+            )
 
             # Увеличиваем счётчики на всех уровнях
             parent_node["_count"] += 1
@@ -232,10 +313,9 @@ class SegmentMainWindow:
                 node.pop("_count", None)
 
         finalize_labels(tree)
-        
+
         return tree
 
-        
     def layout(self):
         return dmc.Container(
             children=[
@@ -252,36 +332,43 @@ class SegmentMainWindow:
                                 dmc.Container(
                                     id=self.tree_conteiner_id,
                                     children=[
+                                        self.group_box,
+                                        dmc.Space(h=5),
                                         self.tree,
-                                        ],
-                                    fluid=True
+                                        dmc.Space(h=40),
+                                        dmc.Flex(self.actions,justify='flex-start')
+                                    ],
+                                    fluid=True,
                                 )
                             ],
-                            span=6
+                            span=5,
                         ),
                         dmc.GridCol(
                             children=[
                                 dmc.Container(
                                     id=self.details_conteiner_id,
-                                    children=['это детали'],
-                                    fluid=True
+                                    children=["это детали"],
+                                    fluid=True,
                                 )
                             ],
-                            span=6
+                            span=7,
                         ),
-                        
                     ]
                 ),
                 dcc.Store(id="dummy_imputs_for_segment_slider"),
                 dcc.Store(id="dummy_imputs_for_segment_render"),
+                CATS_MANAGEMENT.make_drawler()
             ],
-            fluid=True
+            fluid=True,
         )
-    
+
     def register_callbacks(self, app):
+        
+        
+        
         @app.callback(
             Output(self.df_store_id, "data"),
-            Output(self.last_update_lb_id, "children"),  
+            Output(self.last_update_lb_id, "children"),
             Input(self.mslider_id, "value"),
             Input("dummy_imputs_for_segment_render", "data"),
             State(self.df_store_id, "data"),
@@ -289,6 +376,11 @@ class SegmentMainWindow:
         )
         def update_df(slider_value, dummy, store_data):
             start, end = id_to_months(slider_value[0], slider_value[1])
+            start: pd.Timestamp = pd.to_datetime(start) + pd.offsets.MonthBegin(0)
+            end: pd.Timestamp = pd.to_datetime(end) + pd.offsets.MonthEnd(0)
+
+            start = start.strftime("%Y-%m-%d")
+            end = end.strftime("%Y-%m-%d")
 
             if store_data and "df_id" in store_data:
                 if store_data["start"] == start and store_data["end"] == end:
@@ -301,59 +393,67 @@ class SegmentMainWindow:
 
                 delete_df_from_redis(store_data["df_id"])
 
-            df = self.data(start_eom=start, end_eom=end)
+            df = fletch_dataset(start, end)
 
             df_id = save_df_to_redis(df, expire_seconds=1200)
-            
+
             store_dict = {
                 "df_id": df_id,
                 "start": start,
                 "end": end,
                 "slider_val": slider_value,
             }
-            
+
             nnoms = df.fullname.nunique()
 
             min_date = pd.to_datetime(start)
             max_date = pd.to_datetime(end)
 
-            notificattion = (
-                f"{min_date.strftime('%b %y')} - {max_date.strftime('%b %y')} ВСЕГО: {nnoms:.0f} НОМЕНКЛАТУР"
-            )
+            notificattion = f"{min_date.strftime('%b %y')} - {max_date.strftime('%b %y')} ВСЕГО: {nnoms:.0f} НОМЕНКЛАТУР"
 
             return store_dict, notificattion
-        
+
         @app.callback(
             Output(self.tree_id, "data"),
             Input(self.df_store_id, "data"),
+            Input(self.group_box_id, "value"),
         )
-        def update_tabs(store_data):            
+        def update_tabs(store_data, group_val):
             id_df = store_data["df_id"]
-            df = load_df_from_redis(id_df)
-            
-             
-            return self.maketree(df)
-        
+
+            return self.maketree(id_df, group_val)
+
         @app.callback(
-            Output(self.details_conteiner_id,"children"),
+            Output(self.details_conteiner_id, "children"),
+            #Включаем кнопки
+            Output(self.assing_cat,'disabled'),
+            Output(self.assing_brend,'disabled'),
+            Output(self.assing_manu,'disabled'),
+            
             Input(self.tree_id, "checked"),
             State("theme_switch", "checked"),
-            prevent_initial_call=True             
+            prevent_initial_call=True,
         )
-        def get_data(checked,theme):
-            code = json.dumps( checked, indent=4)
+        def get_data(checked, theme):
+            code = json.dumps(checked, indent=4)
             if not checked:
-                return dmc.Paper("Нет выбранных элементов") 
-            
+                return dmc.Paper("Нет выбранных элементов"), True, True, True
+
             rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
             md = get_items(checked)
-            
-            
-            return self.update_ag(md,rrgrid_className)
 
-           
-# a = SegmentMainWindow()
-# d = a.data('2025-01-31','2025-09-30')
-
-# # d = d[d['cat']=='Столы']
-# print(d['parent_cat',])
+            return self.update_ag(md, rrgrid_className),False,False,False
+        
+        #Вызываем управление категорями
+        @app.callback(
+            Output(CATS_MANAGEMENT.drawer_id,'opened'),
+            Output(CATS_MANAGEMENT.drawer_conteiner_id,'children'),
+            Input(self.assing_cat,'n_clicks'),
+            State(self.tree_id,'checked'),
+            prevent_initial_call=True,            
+        )
+        def update_cats(nclicks,ids):
+            return True, CATS_MANAGEMENT.update_drawer(ids)
+                
+        CATS_MANAGEMENT.register_callbacks(app)
+        

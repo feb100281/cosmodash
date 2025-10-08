@@ -274,6 +274,7 @@ def main_app():
     sd_components().register_callbacks(app)
     SEGMENTS_CALLBACKS.register_callbacks(app)
     preview_callbacks(app)
+    # print(app.callback_map.keys())
 
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
