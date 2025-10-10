@@ -196,6 +196,16 @@
 }
 
 
+/* Отрицательные значения: красный и жирный */
+.ag-theme-quartz .neg-cell,
+.ag-theme-quartz-dark .neg-cell,
+.ag-theme-alpine .neg-cell,
+.ag-theme-alpine-dark .neg-cell {
+  color: #d00000 !important;
+  font-weight: 700 !important;
+}
+
+
 
 
 

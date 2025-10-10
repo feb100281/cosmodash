@@ -9,18 +9,20 @@ import dash_ag_grid as dag
 
 import dash
 from dash import (
-    dcc, html, Input, Output, State,
+    dcc, html, Input, Output, State, ALL,
     MATCH, no_update, callback_context as ctx
 )
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 import locale
+from components import ClickOnNotice
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from components import NoData, BASE_COLORS, COLORS_BY_SHADE
 from data import load_df_from_redis
 from .modal_area_chart import StoreAreaChartModal
+
 
 
 
@@ -112,13 +114,185 @@ class StoresComponents:
     # ======================= COMPONENTS =======================
 
 
+    # def _heatmap_period_block(self, df_scope: pd.DataFrame, start, end, metric: str, *, is_dark: bool=False):
+
+    #     import plotly.graph_objects as go
 
 
+    #     # --- валидация
+    #     if df_scope is None or df_scope.empty or pd.isna(start) or pd.isna(end):
+    #         return dmc.Alert("Нет данных для теплокарты", color="gray", variant="light", radius="md")
 
+    #     # --- приведение диапазона
+    #     df = df_scope.copy()
+    #     df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    #     start = pd.to_datetime(start).normalize()
+    #     end   = pd.to_datetime(end).normalize()
+    #     df = df[(df["date"] >= start) & (df["date"] <= end)]
+    #     if df.empty:
+    #         return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md")
+
+    #     # --- выбор метрики (amount | cr)
+    #     val_col = "amount" if (metric or "amount") in ("amount", "aov", "amount") else "cr"
+    #     day_sum = df.groupby(df["date"].dt.date)[val_col].sum().astype(float)
+
+    #     # --- сетка недель (Пн–Вс)
+    #     first_monday = (start - pd.Timedelta(days=start.weekday())).normalize()
+    #     last_sunday  = (end + pd.Timedelta(days=(6 - end.weekday()))).normalize()
+    #     weeks, cur = [], first_monday
+    #     while cur <= last_sunday:
+    #         weeks.append(cur)
+    #         cur += pd.Timedelta(days=7)
+
+    #     # --- матрицы
+    #     z, custom_date, valid_mask, row_sums = [], [], [], []
+    #     for ws in weeks:
+    #         row_vals, row_dates, row_mask = [], [], []
+    #         for d in range(7):
+    #             the_day = (ws + pd.Timedelta(days=d)).date()
+    #             if the_day < start.date() or the_day > end.date():
+    #                 row_vals.append(np.nan); row_dates.append(""); row_mask.append(False)
+    #             else:
+    #                 v = float(day_sum.get(the_day, 0.0))
+    #                 row_vals.append(v)
+    #                 row_dates.append(pd.Timestamp(the_day).strftime("%d.%m"))
+    #                 row_mask.append(True)
+    #         z.append(row_vals); custom_date.append(row_dates); valid_mask.append(row_mask)
+    #         row_sums.append(np.nansum(row_vals))
+
+    #     z_arr = np.array(z, dtype=float)
+    #     finite_vals = z_arr[np.isfinite(z_arr)]
+    #     z_max = float(np.nanmax(finite_vals)) if finite_vals.size else 0.0
+
+    #     # --- формат чисел
+    #     if   z_max >= 1_000_000: div, suffix = 1_000_000.0, " млн"
+    #     elif z_max >=   100_000: div, suffix = 1_000.0,     " тыс"
+    #     else:                    div, suffix = 1.0,         " ₽"
+
+    #     def fmt_sum(v: float) -> str:
+    #         if not np.isfinite(v): return "—"
+    #         if div == 1_000_000.0: return f"{v/div:.1f}{suffix}"
+    #         if div == 1_000.0:     return f"{v/div:.1f}{suffix}"
+    #         return f"{v:,.0f} ₽".replace(",", " ")
+
+    #     weekday_names = ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"]
+    #     x_labels = weekday_names
+
+    #     # подписи строк: «dd.mm–dd.mm — сумма»
+    #     y_labels = []
+    #     for i, ws in enumerate(weeks):
+    #         we = ws + pd.Timedelta(days=6)
+    #         y_labels.append(f"{ws.strftime('%d.%m')}–{we.strftime('%d.%m')} — {fmt_sum(row_sums[i])}")
+
+    #     # --- цвета под тему
+    #     text_primary = "#11181C" if not is_dark else "#E6E8EB"
+    #     graph_bg = "rgba(0,0,0,0)"  # прозрачный — впишется в тему
+    #     badge_bg = "rgba(255,255,255,0.80)" if not is_dark else "rgba(0,0,0,0.55)"
+    #     badge_border = "rgba(0,0,0,0.18)" if not is_dark else "rgba(255,255,255,0.18)"
+    #     badge_text_default = "#1F2A44" if not is_dark else "#E6E8EB"
+
+    #     # --- теплокарта
+    #     fig = go.Figure(
+    #         data=go.Heatmap(
+    #             z=z_arr,
+    #             x=x_labels,
+    #             y=y_labels,
+    #             coloraxis="coloraxis",
+    #             customdata=custom_date,
+    #             hovertemplate="<b>%{customdata}</b><br>%{y} / %{x}<br>Значение: %{z:,.0f}<extra></extra>",
+    #             zmin=None,           # позволяем <0
+    #             zsmooth=False
+    #         )
+    #     )
+
+    #     # порог контраста (для цвета ДАТЫ над плиткой)
+    #     z_min = float(np.nanmin(finite_vals)) if finite_vals.size else 0.0
+    #     z_mid = (z_min + (z_max if z_max > 0 else 1.0)) / 2.0
+
+    #     # --- динамические размеры
+    #     num_rows = len(weeks)
+    #     row_h = 36 if num_rows <= 20 else (30 if num_rows <= 32 else 26)
+    #     top_m, bot_m = 64, 44
+    #     height_px = int(top_m + bot_m + num_rows * row_h)
+
+    #     y_tick_size  = 12 if num_rows <= 20 else (11 if num_rows <= 32 else 10)
+    #     date_font_sz = 12 if num_rows <= 20 else (11 if num_rows <= 32 else 10)
+    #     sum_font_sz  = 11 if num_rows <= 20 else (10 if num_rows <= 32 else 9)
+
+    #     # вертикальные сдвиги внутри ячейки
+    #     yshift_date = int(row_h * 0.28)
+    #     yshift_sum  = -int(row_h * 0.28)
+
+    #     # --- аннотации: дата (верх) + сумма в «бейдже» (низ)
+    #     for r_idx, y_lab in enumerate(y_labels):
+    #         for c_idx, x_lab in enumerate(x_labels):
+    #             if not valid_mask[r_idx][c_idx]:
+    #                 continue
+    #             raw_val = z_arr[r_idx, c_idx]
+    #             val = float(raw_val) if np.isfinite(raw_val) else 0.0
+    #             date_txt = custom_date[r_idx][c_idx]
+
+    #             # 1) дата
+    #             date_color = "#FFFFFF" if (val > z_mid) else text_primary
+    #             fig.add_annotation(
+    #                 x=x_lab, y=y_lab, text=date_txt,
+    #                 showarrow=False, yshift=yshift_date,
+    #                 font=dict(size=date_font_sz, color=date_color,
+    #                         family="Inter, system-ui, -apple-system, Segoe UI")
+    #             )
+
+    #             # 2) сумма (красным, если < 0)
+    #             value_color = "red" if val < 0 else badge_text_default
+    #             fig.add_annotation(
+    #                 x=x_lab, y=y_lab, text=fmt_sum(val),
+    #                 showarrow=False, yshift=yshift_sum,
+    #                 font=dict(size=sum_font_sz, color=value_color,
+    #                         family="Inter, system-ui, -apple-system, Segoe UI"),
+    #                 bgcolor=badge_bg,
+    #                 bordercolor=badge_border,
+    #                 borderwidth=1,
+    #                 borderpad=2
+    #             )
+
+    #     # --- оформление
+    #     colorbar_title = "Выручка, ₽" if val_col == "amount" else "Возвраты, ₽"
+    #     fig.update_layout(
+    #         height=height_px,
+    #         margin=dict(l=30, r=30, t=56, b=36),
+    #         coloraxis=dict(
+    #             colorscale="Blues",
+    #             colorbar=dict(
+    #                 title=dict(text=colorbar_title, font=dict(color=text_primary)),  # <-- правильный способ
+    #                 tickformat=",.0f",
+    #                 tickfont=dict(color=text_primary)
+    #             )
+    #         ),
+    #         xaxis=dict(type="category", tickfont=dict(size=12, color=text_primary)),
+    #         yaxis=dict(type="category", tickfont=dict(size=y_tick_size, color=text_primary)),
+    #         plot_bgcolor=graph_bg,
+    #         paper_bgcolor=graph_bg,
+    #         title=dict(
+    #             text=f"Календарь {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}",
+    #             x=0.5, xanchor="center",
+    #             font=dict(size=16, color=text_primary,
+    #                     family="Inter, system-ui, -apple-system, Segoe UI")
+    #         )
+    #     )
+
+    #     return dcc.Graph(
+    #         figure=fig,
+    #         config={"displayModeBar": False},
+    #         style={"height": f"{height_px}px"}
+    #     )
+    
+    
+    
     def _heatmap_period_block(self, df_scope: pd.DataFrame, start, end, metric: str, *, is_dark: bool=False):
-
+        import numpy as np
+        import pandas as pd
         import plotly.graph_objects as go
-
+        from dash import dcc, html
+        import dash_mantine_components as dmc
 
         # --- валидация
         if df_scope is None or df_scope.empty or pd.isna(start) or pd.isna(end):
@@ -146,19 +320,20 @@ class StoresComponents:
             cur += pd.Timedelta(days=7)
 
         # --- матрицы
-        z, custom_date, valid_mask, row_sums = [], [], [], []
+        z, custom_iso, custom_ddmm, valid_mask, row_sums = [], [], [], [], []
         for ws in weeks:
-            row_vals, row_dates, row_mask = [], [], []
+            row_vals, row_iso, row_ddmm, row_mask = [], [], [], []
             for d in range(7):
                 the_day = (ws + pd.Timedelta(days=d)).date()
                 if the_day < start.date() or the_day > end.date():
-                    row_vals.append(np.nan); row_dates.append(""); row_mask.append(False)
+                    row_vals.append(np.nan); row_iso.append(""); row_ddmm.append(""); row_mask.append(False)
                 else:
                     v = float(day_sum.get(the_day, 0.0))
                     row_vals.append(v)
-                    row_dates.append(pd.Timestamp(the_day).strftime("%d.%m"))
+                    row_iso.append(pd.Timestamp(the_day).date().isoformat())   # ISO для clickData
+                    row_ddmm.append(pd.Timestamp(the_day).strftime("%d.%m"))   # красивый формат для аннотации
                     row_mask.append(True)
-            z.append(row_vals); custom_date.append(row_dates); valid_mask.append(row_mask)
+            z.append(row_vals); custom_iso.append(row_iso); custom_ddmm.append(row_ddmm); valid_mask.append(row_mask)
             row_sums.append(np.nansum(row_vals))
 
         z_arr = np.array(z, dtype=float)
@@ -199,9 +374,8 @@ class StoresComponents:
                 x=x_labels,
                 y=y_labels,
                 coloraxis="coloraxis",
-                customdata=custom_date,
+                customdata=custom_iso,  # ISO-дата для clickData
                 hovertemplate="<b>%{customdata}</b><br>%{y} / %{x}<br>Значение: %{z:,.0f}<extra></extra>",
-                zmin=None,           # позволяем <0
                 zsmooth=False
             )
         )
@@ -231,12 +405,12 @@ class StoresComponents:
                     continue
                 raw_val = z_arr[r_idx, c_idx]
                 val = float(raw_val) if np.isfinite(raw_val) else 0.0
-                date_txt = custom_date[r_idx][c_idx]
 
-                # 1) дата
+                # 1) дата (dd.mm)
+                ddmm = custom_ddmm[r_idx][c_idx]
                 date_color = "#FFFFFF" if (val > z_mid) else text_primary
                 fig.add_annotation(
-                    x=x_lab, y=y_lab, text=date_txt,
+                    x=x_lab, y=y_lab, text=ddmm,
                     showarrow=False, yshift=yshift_date,
                     font=dict(size=date_font_sz, color=date_color,
                             family="Inter, system-ui, -apple-system, Segoe UI")
@@ -263,7 +437,7 @@ class StoresComponents:
             coloraxis=dict(
                 colorscale="Blues",
                 colorbar=dict(
-                    title=dict(text=colorbar_title, font=dict(color=text_primary)),  # <-- правильный способ
+                    title=dict(text=colorbar_title, font=dict(color=text_primary)),
                     tickformat=",.0f",
                     tickfont=dict(color=text_primary)
                 )
@@ -280,11 +454,35 @@ class StoresComponents:
             )
         )
 
-        return dcc.Graph(
-            figure=fig,
-            config={"displayModeBar": False},
-            style={"height": f"{height_px}px"}
-        )
+        # --- ids под MATCH (используем index из инстанса)
+        idx = getattr(self, "index", 0)
+        graph_id = {'type':'st_heatmap_graph','index': idx}
+        modal_id = {'type':'st_heatmap_modal','index': idx}
+        modal_hdr = {'type':'st_heatmap_modal_hdr','index': idx}
+        modal_body = {'type':'st_heatmap_modal_body','index': idx}
+
+        # --- возврат: график + модалка (для дриллдауна)
+        return html.Div([
+            dcc.Graph(
+                id=graph_id,
+                figure=fig,
+                config={"displayModeBar": False},
+                style={"height": f"{height_px}px"}
+            ),
+            dmc.Modal(
+                id=modal_id,
+                centered=True,
+                size="80%",
+                overlayProps={"blur": 4},
+                children=[
+                    dmc.Group(justify="space-between",
+                            children=[ dmc.Text(id=modal_hdr, fw=700, size="lg") ]),
+                    dmc.Divider(my="sm"),
+                    html.Div(id=modal_body)
+                ]
+            )
+        ])
+
 
 
 
@@ -325,10 +523,35 @@ class StoresComponents:
             controls = dmc.Group(
                 justify="space-between", align="center", wrap="wrap", gap="sm",
                 children=[
-                    dmc.Group(gap="xs", align="center", children=[
-                        DashIconify(icon="tabler:calendar-due", width=18),
-                        dmc.Text("Календарь за период", fw=700),
-                    ]),
+                    # dmc.Group(gap="xs", align="center", children=[
+                    #     DashIconify(icon="tabler:calendar-due", width=18),
+                    #     dmc.Text("Календарь за период", fw=700),
+                    #     ClickOnNotice(
+                    #         notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                    #         icon="streamline-freehand-color:show-hat-magician-1",  
+                    #         color="#007BFF",
+                    #     ).component,
+                    # ]),
+                    
+                    dmc.Stack(
+                            gap="xs",
+                            children=[
+                                dmc.Group(
+                                    gap="xs", align="center",
+                                    children=[
+                                        DashIconify(icon="tabler:calendar-due", width=18),
+                                        dmc.Text("Календарь за период", fw=700),
+                                    ],
+                                ),
+                                ClickOnNotice(
+                                    notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                                    icon="streamline-ultimate:task-finger-show",
+                                    color="#007BFF",
+                                    icon_width=40,
+                                ).component,
+                            ]
+                        ),
+
                     dmc.Group(gap="sm", align="center", children=[
                         dmc.SegmentedControl(
                             id=self.heatmap_metric_id,
@@ -1166,6 +1389,11 @@ class StoresComponents:
                             children=[
                                 dmc.Title('График продаж по магазинам', order=4),
                                 dmc.Space(h=10),
+                                ClickOnNotice(
+                                        notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                                        icon="streamline-ultimate:task-finger-show",  
+                                        color="#007BFF",
+                                    ).component,
                                 chart,
                             ],
                         ),
@@ -2292,97 +2520,275 @@ class StoresComponents:
         
         
         #### КАЛЕНДАРЬ ПО ВЫРУЧКЕ НА ГЛАВНОЙ СТРАНИЦЕ
-        # @dash.callback(
-        #     Output({'type':'st_heatmap_wrap','index':MATCH}, 'children'),
-        #     Output({'type':'st_heatmap_scope','index':MATCH}, 'children'),   # ← добавили
-        #     Input({'type':'st_heatmap_metric','index':MATCH}, 'value'),
-        #     Input({'type':'st_heatmap_range','index':MATCH}, 'value'),
-        #     Input({'type':'chanel_multyselect','index':MATCH}, 'value'),
-        #     Input({'type':'region_multyselect','index':MATCH}, 'value'),
-        #     Input({'type':'store_multyselect','index':MATCH}, 'value'),
-        #     State({'type':'st_daily','index':MATCH}, 'data'),
-        #     prevent_initial_call=False,
-        # )
-        # def render_period_heatmap(metric, date_range, ch_val, rg_val, st_val, daily_data):
-        #     import pandas as pd
 
-        #     def L(x): return [] if x is None else (x if isinstance(x, list) else [x])
-
-        #     # --- вычислим подпись для бейджа
-        #     stores = L(st_val)
-        #     if not stores:
-        #         scope_text = "Все магазины"
-        #     elif len(stores) == 1:
-        #         scope_text = stores[0]
-        #     elif len(stores) == 2:
-        #         scope_text = f"{stores[0]}, {stores[1]}"
-        #     else:
-        #         scope_text = f"{len(stores)} магазинов"
-
-        #     df = pd.DataFrame(daily_data or [])
-        #     if df.empty:
-        #         return dmc.Alert("Нет данных для теплокарты", color="gray", variant="light", radius="md"), scope_text
-
-        #     if L(ch_val): df = df[df['chanel'].isin(L(ch_val))]
-        #     if L(rg_val): df = df[df['store_region'].isin(L(rg_val))]
-        #     if L(st_val): df = df[df['store_gr_name'].isin(L(st_val))]
-
-        #     # период
-        #     if date_range and len(date_range) == 2 and date_range[0] and date_range[1]:
-        #         start = pd.to_datetime(date_range[0])
-        #         end   = pd.to_datetime(date_range[1])
-        #     else:
-        #         start = pd.to_datetime(df['date'].min())
-        #         end   = pd.to_datetime(df['date'].max())
-
-        #     df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        #     df = df[(df['date'] >= start) & (df['date'] <= end)]
-        #     if df.empty:
-        #         return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md"), scope_text
-
-        #     # построение графика
-        #     graph = self._heatmap_period_block(df, start, end, metric)
-
-        #     return graph, scope_text
         
         
+        # ----- callback -----
         @dash.callback(
-            Output({'type':'st_heatmap_wrap','index':MATCH}, 'children'),
-            Input({'type':'st_heatmap_metric','index':MATCH}, 'value'),
-            Input({'type':'st_heatmap_range','index':MATCH}, 'value'),
-            Input({'type':'chanel_multyselect','index':MATCH}, 'value'),
-            Input({'type':'region_multyselect','index':MATCH}, 'value'),
-            Input({'type':'store_multyselect','index':MATCH}, 'value'),
-            Input("theme_switch", "checked"),                    # ← ТЕМА
-            State({'type':'st_daily','index':MATCH}, 'data'),
+            Output({'type': 'st_heatmap_wrap', 'index': MATCH}, 'children'),
+            Output({'type': 'st_heatmap_scope', 'index': MATCH}, 'children'),  # ← добавлено для бейджа
+            Input({'type': 'st_heatmap_metric', 'index': MATCH}, 'value'),
+            Input({'type': 'st_heatmap_range', 'index': MATCH}, 'value'),
+            Input({'type': 'chanel_multyselect', 'index': MATCH}, 'value'),
+            Input({'type': 'region_multyselect', 'index': MATCH}, 'value'),
+            Input({'type': 'store_multyselect', 'index': MATCH}, 'value'),
+            Input("theme_switch", "checked"),  # тема
+            State({'type': 'st_daily', 'index': MATCH}, 'data'),
             prevent_initial_call=False,
         )
         def render_period_heatmap(metric, date_range, ch_val, rg_val, st_val, theme_checked, daily_data):
             import pandas as pd
             def L(x): return [] if x is None else (x if isinstance(x, list) else [x])
 
+            # --- формируем подпись для бейджа ---
+            stores = L(st_val)
+            if not stores:
+                scope_text = "Все магазины"
+            elif len(stores) == 1:
+                scope_text = stores[0]
+            elif len(stores) == 2:
+                scope_text = f"{stores[0]}, {stores[1]}"
+            else:
+                scope_text = f"{len(stores)} магазинов"
+
             df = pd.DataFrame(daily_data or [])
             if df.empty:
-                return dmc.Alert("Нет данных для теплокарты", color="gray", variant="light", radius="md")
+                return dmc.Alert("Нет данных для теплокарты", color="gray", variant="light", radius="md"), scope_text
 
-            if L(ch_val): df = df[df['chanel'].isin(L(ch_val))]
-            if L(rg_val): df = df[df['store_region'].isin(L(rg_val))]
-            if L(st_val): df = df[df['store_gr_name'].isin(L(st_val))]
+            if L(ch_val):
+                df = df[df['chanel'].isin(L(ch_val))]
+            if L(rg_val):
+                df = df[df['store_region'].isin(L(rg_val))]
+            if L(st_val):
+                df = df[df['store_gr_name'].isin(L(st_val))]
 
+            # --- определяем период ---
             if date_range and len(date_range) == 2 and date_range[0] and date_range[1]:
                 start = pd.to_datetime(date_range[0])
-                end   = pd.to_datetime(date_range[1])
+                end = pd.to_datetime(date_range[1])
             else:
                 start = pd.to_datetime(df['date'].min())
-                end   = pd.to_datetime(df['date'].max())
+                end = pd.to_datetime(df['date'].max())
 
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             df = df[(df['date'] >= start) & (df['date'] <= end)]
-            if df.empty:
-                return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md")
 
-            # строим с учётом темы
-            return self._heatmap_period_block(df, start, end, metric or "amount", is_dark=bool(theme_checked))
+            if df.empty:
+                return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md"), scope_text
+
+            # --- строим теплокарту ---
+            graph = self._heatmap_period_block(df, start, end, metric or "amount", is_dark=bool(theme_checked))
+
+            return graph, scope_text
+
+   
+
+        
+        
+        
+        @app.callback(
+            Output({'type': 'st_heatmap_modal', 'index': MATCH}, 'opened'),
+            Output({'type': 'st_heatmap_modal_hdr', 'index': MATCH}, 'children'),
+            Output({'type': 'st_heatmap_modal_body', 'index': MATCH}, 'children'),
+            Output({'type': 'st_heatmap_graph', 'index': MATCH}, 'clickData', allow_duplicate=True),
+
+            Input({'type': 'st_heatmap_graph', 'index': MATCH}, 'clickData'),
+
+            # ALL в State оставляем — берём первые элементы
+            State({'type': 'st_heatmap_metric', 'index': ALL}, 'value'),
+            State({'type': 'chanel_multyselect', 'index': ALL}, 'value'),
+            State({'type': 'region_multyselect', 'index': ALL}, 'value'),
+            State({'type': 'store_multyselect', 'index': ALL}, 'value'),
+            State({'type': 'st_daily', 'index': ALL}, 'data'),
+
+            prevent_initial_call=True
+        )
+        def open_heatmap_drilldown(clickData, metric_all, ch_all, rg_all, st_all, daily_all):
+            def L(x):
+                return [] if x is None else (x if isinstance(x, list) else [x])
+
+            if not clickData:
+                raise PreventUpdate
+
+            iso = clickData["points"][0].get("customdata")
+            if not iso:
+                 return no_update, no_update, no_update, no_update
+
+            # берём первые значения из ALL-состояний
+            metric     = (metric_all[0] if metric_all else "amount") or "amount"
+            ch_val     = ch_all[0] if ch_all else []
+            rg_val     = rg_all[0] if rg_all else []
+            st_val     = st_all[0] if st_all else []
+            daily_data = daily_all[0] if daily_all else []
+
+            day = pd.to_datetime(iso).normalize()
+
+            df = pd.DataFrame(daily_data or [])
+            if df.empty:
+                return True, f"Детализация: {day.date().isoformat()}", dmc.Alert("Нет данных", color="gray")
+
+            # фильтры из текущего UI
+            if L(ch_val):
+                df = df[df['chanel'].isin(L(ch_val))]
+            if L(rg_val):
+                df = df[df['store_region'].isin(L(rg_val))]
+            if L(st_val):
+                df = df[df['store_gr_name'].isin(L(st_val))]
+
+            df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
+            df_day = df[df['date'] == day].copy()
+
+            if df_day.empty:
+                return True, f"Детализация: {day.date().isoformat()}", dmc.Alert("За этот день данных нет", color="gray")
+
+            # защита на случай отсутствующих колонок
+            for c in ['amount', 'cr', 'quant']:
+                if c not in df_day.columns:
+                    df_day[c] = 0
+
+            # если нет dt — определяем как валовые продажи (amount + cr)
+            if 'dt' not in df_day.columns:
+                df_day['dt'] = df_day['amount'] + df_day['cr']
+
+            # приведение к числам
+            num_cols = ['amount', 'cr', 'quant', 'dt']
+            df_day[num_cols] = df_day[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+
+            # какая метрика сортирует
+            metric_str = str(metric).lower()
+            if metric_str in ("amount", "aov", "dt"):
+                val_col = "amount" if metric_str in ("amount", "aov") else "dt"
+            else:
+                val_col = "cr"
+
+            # группировка и агрегация
+            agg = (
+                df_day.groupby('store_gr_name', as_index=False)
+                    .agg(
+                        dt=('dt', 'sum'),
+                        amount=('amount', 'sum'),
+                        cr=('cr', 'sum'),
+                        orders=('quant', 'sum')
+                    )
+                    .sort_values(by=val_col, ascending=False)
+            )
+
+            # ---- AG Grid columns ----
+            columns = [
+                {
+                    "headerName": "Магазин",
+                    "field": "store_gr_name",
+                    "filter": "agTextColumnFilter",
+                    "minWidth": 220,
+                    "pinned": "left",
+                    "cellClass": "ag-firstcol-bg",
+                },
+                {
+                    "headerName": "Продажи",
+                    "field": "dt",
+                    "type": "numericColumn",
+                    "filter": "agNumberColumnFilter",
+                    "valueFormatter": {
+                        "function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"
+                    },
+                },
+                {
+                    "headerName": "Возвраты",
+                    "field": "cr",
+                    "type": "numericColumn",
+                    "filter": "agNumberColumnFilter",
+                    # красный цвет для всех значений
+                    "cellStyle": {
+                        "color": "#d00000",
+                        "fontWeight": "bold"
+                    },
+                    "valueFormatter": {
+                        "function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"
+                    },
+                },
+                    {
+                        "headerName": "Чистые продажи",
+                        "field": "amount",
+                        "type": "numericColumn",
+                        "filter": "agNumberColumnFilter",
+                            "cellClassRules": {
+                            "neg-cell": "params.value < 0"
+                        },
+                       
+                        "valueFormatter": {
+                            "function": "params.value ? '₽' + d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"
+                        },
+                    },
+
+                {
+                    "headerName": "Заказы",
+                    "field": "orders",
+                    "type": "numericColumn",
+                    "filter": "agNumberColumnFilter",
+                   
+                    "valueFormatter": {
+                        "function": "return (params.value==null)?'': new Intl.NumberFormat('ru-RU').format(params.value);"
+                    },
+                },
+            ]
+
+            # ---- AG Grid table ----
+            tbl = dag.AgGrid(
+                id={"type": "grid_heatmap_drilldown", "index": str(day.date())},
+                columnDefs=columns,
+                rowData=agg.to_dict("records"),
+                defaultColDef={
+                    "sortable": True,
+                    "filter": True,
+                    "resizable": True,
+                    "floatingFilter": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                },
+                dashGridOptions={
+                    "pagination": True,
+                    "paginationPageSize": 20,
+                    "rowSelection": "single",
+                    "animateRows": True,
+                    "autoSizeStrategy": {"type": "fitGridWidth"},
+                },
+                style={"height": "420px", "width": "100%"},
+                className="ag-theme-quartz",
+            )
+
+            # ---- footer ----
+            footer = dmc.Group(
+                justify="flex-end", mt="sm",
+                children=[
+                    dmc.Badge(f"Итого продажи: {agg['dt'].sum():,.0f}".replace(",", " "), radius='xs', color="blue"),
+                    dmc.Badge(f"Итого выручка: {agg['amount'].sum():,.0f}".replace(",", " "), radius='xs', color="green"),
+                    dmc.Badge(f"Итого возвраты: {agg['cr'].sum():,.0f}".replace(",", " "), color="red", radius='xs'),
+                ]
+            )
+
+            body = dmc.Stack([tbl, footer], gap="sm")
+            # title = f"Детализация по магазинам — {day.date().isoformat()}"
+            title = f"Детализация по магазинам — {day.strftime('%-d %B %Y')}"
+
+            return True, title, body, None
+        
+        
+        ### ПЕРЕКЛЮЧЕНИЕ ТЕМЫ: ТАБЛИЦА В МОДАЛКЕ (pattern id)
+        @app.callback(
+            Output({'type': 'grid_heatmap_drilldown', 'index': MATCH}, 'className'),
+            Input("theme_switch", "checked"),
+        )
+        def toggle_theme_heatmap_drilldown(checked):
+            # та же логика темы
+            return "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
+        
+
+
+
+
+
+
+
 
 
 

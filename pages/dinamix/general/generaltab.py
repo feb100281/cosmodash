@@ -899,7 +899,12 @@ class Components:
                         # tooltipProps={"content":  {"function": "chartTooltip"}},
                         # type="default",
                     ),
-                    ClickOnNotice(notice='Кликните на график что бы просмотреть отчет по заказам за выбраный месяц').component,
+             ClickOnNotice(
+                notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                icon="streamline-ultimate:task-finger-show",  
+                color="#007BFF",
+            ).component,
+
                     dmc.Text('Количество заказов',size='md'),
                     dmc.CompositeChart(
                         h=100,

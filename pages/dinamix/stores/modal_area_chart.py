@@ -586,13 +586,20 @@ class StoreAreaChartModal:
                     ]
                 },
 
-                {"headerName": "Кол-во", "field": "quant", "colId": "quant",
+                {"headerName": "Кол-во", "field": "quant", "colId": "quant",       
+                 "cellClassRules": {
+                        "neg-cell": "params.value < 0"
+                    },
                 "type": "rightAligned", "aggFunc": "sum", "minWidth": 100,    "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},},
 
                 {"headerName": "Сумма", "field": "amount", "colId": "amount",
                 "type": "rightAligned",
                 "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"},
-                "aggFunc": "sum"},
+                "aggFunc": "sum",     
+                # если значение < 0 — навешиваем CSS-класс neg-cell
+                    "cellClassRules": {
+                        "neg-cell": "params.value < 0"
+                    },},
 
                 {"headerName": "Менеджер", "field": "manager", "colId": "manager",
                 "sortable": True, "enableRowGroup": True, "pinned": "right"},
@@ -715,8 +722,13 @@ class StoreAreaChartModal:
                     "columnGroupShow": "open", "headerClass": "ag-center-header"},
                 ]},
 
-                {"headerName": "Кол-во", "field": "quant", "colId": "quant", "type": "rightAligned", "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},},
+                {"headerName": "Кол-во", "field": "quant", "colId": "quant", "type": "rightAligned",  
+                 "cellClassRules": {
+        "neg-cell": "params.value < 0"}, "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},},
                 {"headerName": "Сумма", "field": "amount", "colId": "amount", "type": "rightAligned",
+                  "cellClassRules": {
+        "neg-cell": "params.value < 0"
+    },
                 "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"}, "cellClass": "ag-firstcol-bg",},
                 {"headerName": "Менеджер", "field": "manager", "colId": "manager",
                 "sortable": True, "enableRowGroup": True},
@@ -739,14 +751,23 @@ class StoreAreaChartModal:
         def _by_day_columns():
             return [
                 {"headerName": "Дата", "field": "date", "colId": "date", "sortable": True, "cellClass": "ag-firstcol-bg"},
-                {"headerName": "Сумма за день", "field": "amount", "colId": "amount",
+                {"headerName": "Сумма за день", "field": "amount", "colId": "amount", 
+                  "cellClassRules": {
+                        "neg-cell": "params.value < 0"
+                    },
                 "type": "rightAligned", "cellClass": "ag-firstcol-bg",
                 "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"}},
-                {"headerName": "Кол-во позиций", "field": "n_items", "colId": "n_items",
+                {"headerName": "Кол-во позиций", "field": "n_items", "colId": "n_items", 
+                 "cellClassRules": {
+                        "neg-cell": "params.value < 0"
+                    },
                 "type": "rightAligned", "valueFormatter": {"function": "d3.format(',.0f')(value)"},  "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},},
                 {"headerName": "Кол-во менеджеров", "field": "n_managers", "colId": "n_managers",
                 "type": "rightAligned", "valueFormatter": {"function": "d3.format(',.0f')(value)"}},
                 {"headerName": "Кол-во шт", "field": "quant", "colId": "quant",
+                  "cellClassRules": {
+                            "neg-cell": "params.value < 0"
+                        },
                 "type": "rightAligned",  "valueFormatter": {"function": "params.value != null ? d3.format(',.0f')(params.value).replace(/,/g, '\\u202F') : ''"},},
             ]
         def _by_day_state():
@@ -762,6 +783,9 @@ class StoreAreaChartModal:
             return [
                 {"headerName": "Категория", "field": "cat", "colId": "cat", "sortable": True,  "cellClass": "ag-firstcol-bg",},
                 {"headerName": "Сумма", "field": "amount", "colId": "amount",
+                  "cellClassRules": {
+                            "neg-cell": "params.value < 0"
+                        },
                 "type": "rightAligned",
                 "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"}},
                 {"headerName": "Кол-во позиций", "field": "n_items", "colId": "n_items",
@@ -778,6 +802,9 @@ class StoreAreaChartModal:
             return [
                 {"headerName": "Менеджер", "field": "manager", "colId": "manager", "sortable": True,  "cellClass": "ag-firstcol-bg",},
                 {"headerName": "Сумма", "field": "amount", "colId": "amount",
+                                "cellClassRules": {
+                        "neg-cell": "params.value < 0"
+                    },
                 "type": "rightAligned",
                 "valueFormatter": {"function": "params.value ? '₽'+ d3.format(',.2f')(params.value).replace(/,/g, '\\u202F') : ''"}},
                 {"headerName": "Кол-во позиций", "field": "n_items", "colId": "n_items",
