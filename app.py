@@ -32,8 +32,14 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
 from pages.segment_analisis import SEGMENTS_LAYOUT, SEGMENT_DF_STORE, SEGMENTS_CALLBACKS
+from pages.planing import PLANING
 from components import NoData, InDevNotice, ClickOnNotice
 from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
+
+scripts = [
+    "https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.10.8/dayjs.min.js",     # dayjs  
+    "https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.10.8/locale/ru.min.js", # russian locale
+]
 
 class MainWnidow:
     def __init__(self):
@@ -165,6 +171,12 @@ class MainWnidow:
                                 leftSection=DashIconify(icon='mdi:matrix',width=16),
                                 description = 'Анализ ассортиментой матрицы', 
                                 ),
+                    dmc.NavLink(label="Планирование", 
+                                href="/forecast", 
+                                active='exact',
+                                leftSection=DashIconify(icon='streamline-ultimate:presentation-projector-screen-budget-analytics',width=16),
+                                description = 'Планирование продаж', 
+                                ),
                     
                 ],
                 p="md",
@@ -266,13 +278,15 @@ def main_app():
         use_pages=True, 
         pages_folder="",          
         title="Панель продаж",
-        suppress_callback_exceptions=True
+        suppress_callback_exceptions=True,
+        external_scripts=scripts
     )
     
 
     MainWnidow().main_page_callbacks(app)
     sd_components().register_callbacks(app)
     SEGMENTS_CALLBACKS.register_callbacks(app)
+    PLANING.registered_callbacks(app)
     preview_callbacks(app)
     # print(app.callback_map.keys())
 
@@ -280,6 +294,7 @@ def main_app():
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
     dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
     dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
+    dash.register_page("Планирование", path="/forecast", layout=PLANING.layout())
 
     app.layout = MainWnidow().page_layout
     
