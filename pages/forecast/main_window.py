@@ -10,7 +10,9 @@ from .forecast import SEASONS_OPTIONS, forecast
 from components import NoData
 
 import locale
+
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
+
 
 class PlaningPage:
     def __init__(self):
@@ -24,12 +26,10 @@ class PlaningPage:
         self.weekly_season_checkbox_id = "weekly_season_checkbox_id"
 
         self.seasons_type_select_id = "seasons_type_select_id"
-        
-        self.changepoint_prior_scale_id='changepoint_prior_scale_id'
-        self.changepoint_range_id = 'changepoint_range_id'
-        self.n_changepoints_id = 'n_changepoints_id'
-        
-        
+
+        self.changepoint_prior_scale_id = "changepoint_prior_scale_id"
+        self.changepoint_range_id = "changepoint_range_id"
+        self.n_changepoints_id = "n_changepoints_id"
 
         self.dates_fieldsets = dmc.Fieldset(
             [
@@ -45,7 +45,7 @@ class PlaningPage:
                             disabled=False,
                             clearable=True,
                             valueFormat="D MMMM YYYY (dddd)",
-                            id = self.horizon_date_picker_id
+                            id=self.horizon_date_picker_id,
                         ),
                         dmc.DateInput(
                             placeholder="Введите дату",
@@ -57,7 +57,7 @@ class PlaningPage:
                             disabled=False,
                             clearable=True,
                             valueFormat="D MMMM YYYY (dddd)",
-                            id = self.init_date_picker_id
+                            id=self.init_date_picker_id,
                         ),
                         dmc.DateInput(
                             placeholder="Введите дату начала",
@@ -69,7 +69,7 @@ class PlaningPage:
                             disabled=False,
                             clearable=True,
                             valueFormat="D MMMM YYYY (dddd)",
-                            id = self.hustorical_cut_date_picker_id
+                            id=self.hustorical_cut_date_picker_id,
                         ),
                     ],
                     settings={"locale": "ru"},
@@ -77,74 +77,67 @@ class PlaningPage:
             ],
             legend="Даты и горизонт планирования",
         )
-        
+
         self.seasons_fieldset = dmc.Fieldset(
             [
                 dmc.Stack(
                     [
                         dmc.Checkbox(
                             "Годовая сезонность",
-                            id = self.yearly_season_checkbox_id,
+                            id=self.yearly_season_checkbox_id,
                             checked=True,
-                            
                         ),
                         dmc.Checkbox(
                             "Недельная сезонность",
-                            id = self.weekly_season_checkbox_id,
-                            checked=True,                            
+                            id=self.weekly_season_checkbox_id,
+                            checked=True,
                         ),
                         dmc.Select(
                             data=SEASONS_OPTIONS,
-                            value='additive',
-                            id = self.seasons_type_select_id
-                        )
-                       
-                        
+                            value="additive",
+                            id=self.seasons_type_select_id,
+                        ),
                     ]
                 )
             ],
-            legend='Сезонность'            
+            legend="Сезонность",
         )
-        
+
         self.trend_fieldset = dmc.Fieldset(
             [
                 dmc.Stack(
                     [
                         dmc.NumberInput(
-                            id = self.n_changepoints_id,
-                            label = "Максимальное кол-во изломов",
+                            id=self.n_changepoints_id,
+                            label="Максимальное кол-во изломов",
                             value=25,
                             max=100,
                             min=1,
-                            allowDecimal=False
+                            allowDecimal=False,
                         ),
                         dmc.NumberInput(
-                            id = self.changepoint_prior_scale_id,
-                            label = "Чувствительность к изменениям",
+                            id=self.changepoint_prior_scale_id,
+                            label="Чувствительность к изменениям",
                             value=0.05,
                             max=0.9,
                             min=0.001,
                             allowDecimal=True,
-                            step = 0.001
+                            step=0.001,
                         ),
                         dmc.NumberInput(
-                            id = self.changepoint_range_id,
-                            label = "Исторические данные",
+                            id=self.changepoint_range_id,
+                            label="Исторические данные",
                             value=1.0,
                             max=1,
                             min=0.1,
                             allowDecimal=True,
-                            step = 0.1
+                            step=0.1,
                         ),
-                        
-                        
-                        
                     ]
                 )
             ],
-            legend='Параметры тренда'
+            legend="Параметры тренда",
         )
-        
 
         self.planning_memo = """
 # Планирование продаж (инструкция)
@@ -205,7 +198,7 @@ class PlaningPage:
                                             [
                                                 self.dates_fieldsets,
                                                 self.seasons_fieldset,
-                                                self.trend_fieldset 
+                                                self.trend_fieldset,
                                             ]
                                         )
                                     ],
@@ -215,17 +208,28 @@ class PlaningPage:
                             span=4,
                         ),
                         dmc.GridCol(
-                            [dmc.Container(id=self.resultes_container_id, fluid=True)],
+                            [
+                                dcc.Loading(
+                                    [
+                                        dmc.Container(
+                                            children=[NoData().component],
+                                            id=self.resultes_container_id,
+                                            fluid=True,
+                                        )
+                                    ],
+                                    type='cube'
+                                )
+                            ],
                             span=8,
                         ),
                     ]
                 ),
             ],
-            fluid=True,
+            fluid=True
         )
-        
-    def registered_callbacks(self,app):
-        
+
+    def registered_callbacks(self, app):
+
         conteiner = self.resultes_container_id
         horizon = self.horizon_date_picker_id
         current_date = self.init_date_picker_id
@@ -236,27 +240,33 @@ class PlaningPage:
         changepaints = self.n_changepoints_id
         proprsacale = self.changepoint_prior_scale_id
         data_samle = self.changepoint_range_id
-        
-        
+
         @app.callback(
-            Output(conteiner,'children'),
-            Input(horizon,'value'),
-            Input(current_date,'value'),
-            Input(cut_off_historical,'value'),
-            Input(year_season,'checked'),
-            Input(week_season,'checked'),
-            Input(season_type,'value'),
-            Input(changepaints,'value'),
-            Input(proprsacale,'value'),
-            Input(data_samle,'value'),
-            
-            
-            
+            Output(conteiner, "children"),
+            Input(horizon, "value"),
+            Input(current_date, "value"),
+            Input(cut_off_historical, "value"),
+            Input(year_season, "checked"),
+            Input(week_season, "checked"),
+            Input(season_type, "value"),
+            Input(changepaints, "value"),
+            Input(proprsacale, "value"),
+            Input(data_samle, "value"),
             prevent_initial_call=True,
         )
-        def update_forecast_conteiner(horizon,cur_date, cut_off, year_season, week_season, saeson_type, changepoins, proprsacale, data_samle ):
+        def update_forecast_conteiner(
+            horizon,
+            cur_date,
+            cut_off,
+            year_season,
+            week_season,
+            saeson_type,
+            changepoins,
+            proprsacale,
+            data_samle,
+        ):
             def content():
-                date = pd.to_datetime(horizon).strftime("%Y-%m-%d") 
+                date = pd.to_datetime(horizon).strftime("%Y-%m-%d")
                 data, yearly_season_chart, total_mape, table = forecast(
                     horizon=date,
                     current_date=cur_date,
@@ -266,47 +276,56 @@ class PlaningPage:
                     seasonality_mode=saeson_type,
                     changepoint_prior_scale=proprsacale,
                     changepoint_range=data_samle,
-                    n_changepoints=changepoins                   
-                    
+                    n_changepoints=changepoins,
+                )
+
+                data["eom"] = pd.to_datetime(data["ds"]) + pd.offsets.MonthEnd(0)
+                bc_data = (
+                    data.pivot_table(
+                        index="eom", columns="type", values="y", aggfunc="sum"
                     )
-                
-                data['eom'] = pd.to_datetime(data['ds']) + pd.offsets.MonthEnd(0)
-                bc_data = data.pivot_table(
-                    index='eom',
-                    columns='type',
-                    values='y',
-                    aggfunc='sum'                    
-                ).reset_index().sort_values('eom').fillna(0).tail(24)
+                    .reset_index()
+                    .sort_values("eom")
+                    .fillna(0)
+                    .tail(24)
+                )
                 bc_data.columns = bc_data.columns.get_level_values(-1)
-                bc_data['eom'] = pd.to_datetime(bc_data['eom']).dt.strftime('%b %y').str.capitalize()
-                
+                bc_data["eom"] = (
+                    pd.to_datetime(bc_data["eom"]).dt.strftime("%b %y").str.capitalize()
+                )
+
                 plan_act_chart = dmc.BarChart(
                     h=300,
                     data=bc_data.to_dict("records"),
-                    dataKey='eom',
+                    dataKey="eom",
                     series=[
-                        {'name':'План','color':'cyan',},
-                        {'name':'Факт','color':'teal',}                        
+                        {
+                            "name": "План",
+                            "color": "cyan",
+                        },
+                        {
+                            "name": "Факт",
+                            "color": "teal",
+                        },
                     ],
-                    
                 )
                 return plan_act_chart, yearly_season_chart, total_mape, table
-                
-            
-            
+
             if horizon:
-               plan_act_chart, yerly_season_chart,total_mape,table  = content()
-               return dmc.Stack(
-                   [
-                       dmc.Title(f'Результаты планирования - MAPE = {total_mape:,.2f}%',order=2),
-                       dmc.Space(h=10),
-                       table,
-                       dmc.Space(h=10),
-                       plan_act_chart,
-                       dmc.Space(h=10),
-                       yerly_season_chart                       
-                   ]
-               )
+                plan_act_chart, yerly_season_chart, total_mape, table = content()
+                return dmc.Stack(
+                    [
+                        dmc.Title(
+                            f"Результаты планирования - MAPE = {total_mape:,.2f}%",
+                            order=2,
+                        ),
+                        dmc.Space(h=10),
+                        dmc.Center(table),
+                        dmc.Space(h=10),
+                        plan_act_chart,
+                        dmc.Space(h=10),
+                        yerly_season_chart,
+                    ]
+                )
             else:
                 return NoData().component
-            
