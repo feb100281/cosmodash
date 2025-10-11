@@ -225,15 +225,23 @@
 }
 
 
+
 .forecast-table td {
-    min-width: 80px;   /* минимальная ширина колонки */
+    min-width: 100px;   /* минимальная ширина колонки */
     max-width: 200px;  /* при желании ограничить */
     padding: 4px 8px;  /* немного больше паддинга для визуального расширения */
     text-align: center;
 }
 
+.forecast-table th:first-child {
+    min-width: 70px;
+    text-align: left;
+    padding-left: 12px;
+}
+
 .forecast-table tr:last-child td {
     border-bottom: 2px solid black;  /* толстая черта внизу */
+    font-weight: 700;
 }
 
 .forecast-table thead tr {
