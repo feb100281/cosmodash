@@ -195,6 +195,16 @@
   font-size: 85%;
 }
 
+/* Отрицательные значения: красный и жирный */
+.ag-theme-quartz .neg-cell,
+.ag-theme-quartz-dark .neg-cell,
+.ag-theme-alpine .neg-cell,
+.ag-theme-alpine-dark .neg-cell {
+  color: #d00000 !important;
+  font-weight: 700 !important;
+}
+
+
 .planing-memo {
   font-size: 12pt;
 }
@@ -205,26 +215,6 @@
 .planing-memo h2 {
   font-size: 12pt;
   color: #E57373;
-}
-
-.my-table {
-  font-size: 10pt;
-  text-align: center;
-  border-collapse: collapse;
-}
-/* Отрицательные значения: красный и жирный */
-.ag-theme-quartz .neg-cell,
-.ag-theme-quartz-dark .neg-cell,
-.ag-theme-alpine .neg-cell,
-.ag-theme-alpine-dark .neg-cell {
-  color: #d00000 !important;
-  font-weight: 700 !important;
-}
-
-.forecast-table {
-  font-size: 10pt;
-  text-align: center;
-  border-collapse: collapse;
 }
 
 
@@ -242,19 +232,19 @@
     text-align: center;
 }
 
-.forecast-table-table tr:last-child td {
+.forecast-table tr:last-child td {
     border-bottom: 2px solid black;  /* толстая черта внизу */
 }
 
-.forecast-table-table thead tr {
+.forecast-table thead tr {
     border-bottom: 2px solid black; /* толстая черта под заголовком */
 }
 
-.forecast-table-table tbody tr:nth-last-child(2) td {
+.forecast-table tbody tr:nth-last-child(2) td {
     border-bottom: 1px solid gray;
 }
 
-.forecast-table-table caption {
+.forecast-table caption {
   font-size: 1.2em;
   color: darkcyan;
 }
