@@ -212,27 +212,49 @@
   text-align: center;
   border-collapse: collapse;
 }
+/* Отрицательные значения: красный и жирный */
+.ag-theme-quartz .neg-cell,
+.ag-theme-quartz-dark .neg-cell,
+.ag-theme-alpine .neg-cell,
+.ag-theme-alpine-dark .neg-cell {
+  color: #d00000 !important;
+  font-weight: 700 !important;
+}
 
-.my-table td {
+.forecast-table {
+  font-size: 10pt;
+  text-align: center;
+  border-collapse: collapse;
+}
+
+
+.forecast-table {
+  font-size: 10pt;
+  text-align: center;
+  border-collapse: collapse;
+}
+
+
+.forecast-table td {
     min-width: 80px;   /* минимальная ширина колонки */
     max-width: 200px;  /* при желании ограничить */
     padding: 4px 8px;  /* немного больше паддинга для визуального расширения */
     text-align: center;
 }
 
-.my-table tr:last-child td {
+.forecast-table-table tr:last-child td {
     border-bottom: 2px solid black;  /* толстая черта внизу */
 }
 
-.my-table thead tr {
+.forecast-table-table thead tr {
     border-bottom: 2px solid black; /* толстая черта под заголовком */
 }
 
-.my-table tbody tr:nth-last-child(2) td {
+.forecast-table-table tbody tr:nth-last-child(2) td {
     border-bottom: 1px solid gray;
 }
 
-.my-table caption {
+.forecast-table-table caption {
   font-size: 1.2em;
   color: darkcyan;
 }

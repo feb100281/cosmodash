@@ -266,28 +266,67 @@ def month_str_to_date(s: str) -> str:
         raise ValueError(f"Невозможно распарсить '{s}': {e}")
 
 
+# class ClickOnNotice:
+#     def __init__(
+#         self,
+#         icon="gridicons:notice-outline",
+#         color="orange",
+#         notice="кликните на график что бы увидеть детали",
+#         icon_width=20,
+#     ):
+
+#         self.color = color
+#         self.icon = icon
+#         self.notice = notice
+#         self.icon_width = icon_width
+
+#     @property
+#     def component(self):
+#         return dmc.Group(
+#             [
+#                 DashIconify(icon=self.icon, color=self.color, width=self.icon_width),
+#                 dmc.Text(f"{self.notice}", c=self.color, size="sm"),
+#             ]
+#         )
+
+
+from dash_iconify import DashIconify
+import dash_mantine_components as dmc
+
+
 class ClickOnNotice:
     def __init__(
         self,
-        icon="gridicons:notice-outline",
-        color="orange",
-        notice="кликните на график что бы увидеть детали",
-        icon_width=20,
+        notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+        icon="streamline-ultimate:task-finger-show",     # ← можно поменять на любую, например "solar:cursor-click-bold-duotone"
+        color="#007BFF",
+        icon_width=50,
     ):
-
-        self.color = color
-        self.icon = icon
         self.notice = notice
+        self.icon = icon
+        self.color = color
         self.icon_width = icon_width
 
     @property
     def component(self):
-        return dmc.Group(
-            [
-                DashIconify(icon=self.icon, color=self.color, width=self.icon_width),
-                dmc.Text(f"{self.notice}", c=self.color, size="sm"),
-            ]
+        return dmc.Alert(
+            icon=DashIconify(icon=self.icon, width=50, color=self.color),
+            title=dmc.Text("Детализация доступна", fw=600, c=self.color),
+            color=self.color,
+            radius="md",
+            variant="light",
+            withCloseButton=False,
+            style={
+                "background": "rgba(0, 123, 255, 0.05)",
+                "border": f"1px solid {self.color}33",
+                "padding": "10px 16px",
+            },
+            children=dmc.Text(self.notice, size="sm", mt=4),
         )
+
+
+
+
 
 
 class DownLoadMenu:

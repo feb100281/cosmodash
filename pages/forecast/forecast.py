@@ -189,7 +189,7 @@ def forecast(
        
         html_table = (df.style
              .format('{:,.0f}',subset=ss,na_rep='-',thousands='\u202F',)
-             .set_table_attributes('class="my-table" ')
+             .set_table_attributes('class="forecast-table" ')
              .set_caption("Результаты планирования")
             #  .hide(axis='index')
         ).to_html()
