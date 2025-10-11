@@ -7,6 +7,8 @@ import os
 import uuid
 from dotenv import load_dotenv
 from pathlib import Path
+import pymysql
+from sqlalchemy import create_engine
 
 load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
@@ -18,6 +20,27 @@ r = redis.Redis(
     password=os.getenv("REDIS_PASSWORD"),
     decode_responses=False,
 )
+
+# подключаем к базе данных
+config = {
+    "user": os.getenv("MYSQL_USER"),  
+    "password": os.getenv("MYSQL_PASSWORD"),  
+    "host": os.getenv("MYSQL_HOST"),  
+    "database": os.getenv("MYSQL_DATABASE"), 
+}
+
+
+# Создание строки подключения для SQLAlchemy
+connection_string = f"mysql+pymysql://{config['user']}:{config['password']}@{config['host']}/{config['database']}"
+
+ENGINE = create_engine(
+    connection_string,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
+
+def get_connection():
+    return pymysql.connect(**config)
 
 
 COLS_DICT = {

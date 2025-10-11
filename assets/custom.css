@@ -195,7 +195,6 @@
   font-size: 85%;
 }
 
-
 /* Отрицательные значения: красный и жирный */
 .ag-theme-quartz .neg-cell,
 .ag-theme-quartz-dark .neg-cell,
@@ -206,9 +205,47 @@
 }
 
 
+.planing-memo {
+  font-size: 12pt;
+}
+.planing-memo h1 {
+  font-size: 14pt;
+  color: darkcyan;
+}
+.planing-memo h2 {
+  font-size: 12pt;
+  color: #E57373;
+}
 
 
+.forecast-table {
+  font-size: 10pt;
+  text-align: center;
+  border-collapse: collapse;
+}
 
 
+.forecast-table td {
+    min-width: 80px;   /* минимальная ширина колонки */
+    max-width: 200px;  /* при желании ограничить */
+    padding: 4px 8px;  /* немного больше паддинга для визуального расширения */
+    text-align: center;
+}
 
+.forecast-table tr:last-child td {
+    border-bottom: 2px solid black;  /* толстая черта внизу */
+}
+
+.forecast-table thead tr {
+    border-bottom: 2px solid black; /* толстая черта под заголовком */
+}
+
+.forecast-table tbody tr:nth-last-child(2) td {
+    border-bottom: 1px solid gray;
+}
+
+.forecast-table caption {
+  font-size: 1.2em;
+  color: darkcyan;
+}
 

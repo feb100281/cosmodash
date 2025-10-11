@@ -1,28 +1,5 @@
-import pymysql
-from dotenv import load_dotenv
-from pathlib import Path
-import os
-from sqlalchemy import create_engine
 import pandas as pd
-import numpy as np
-
-load_dotenv(dotenv_path=Path(__file__).parent / ".env")
-
-config = {
-    "user": os.getenv("MYSQL_USER"),  
-    "password": os.getenv("MYSQL_PASSWORD"),  
-    "host": os.getenv("MYSQL_HOST"),  
-    "database": os.getenv("MYSQL_DATABASE"), 
-}
-conn = pymysql.connect(**config)
-cur = conn.cursor()
-
-
-# Создание строки подключения для SQLAlchemy
-connection_string = f"mysql+pymysql://{config['user']}:{config['password']}@{config['host']}/{config['database']}"
-
-# Создание движка SQLAlchemy
-engine = create_engine(connection_string)
+from data import ENGINE, get_connection
 
 def get_items(ids_int):
     if not ids_int:
@@ -49,7 +26,7 @@ def get_items(ids_int):
         group by fullname, init_date
     """
 
-    return pd.read_sql(query, engine)
+    return pd.read_sql(query, ENGINE)
 
 def fletch_dataset(start, end):
     
@@ -92,7 +69,7 @@ def fletch_dataset(start, end):
             date BETWEEN '{start}' AND '{end}'
     """
     
-    return pd.read_sql(q, engine)
+    return pd.read_sql(q, ENGINE)
 
 def fleching_cats():
     q = f"""
@@ -110,18 +87,15 @@ def fleching_cats():
                 LEFT JOIN
             corporate_subcategory AS subcat ON subcat.category_id = cat.id
     """
-    return pd.read_sql(q, engine)
+    return pd.read_sql(q, ENGINE)
 
 def assign_cat(ids,cat_id,subcat_id):
     placeholders = ','.join(ids)
     cat_id = int(float(cat_id))
     subcat_id = int(float(subcat_id)) if subcat_id else 'NULL'
-    q = f"""
-    update corporate_items
-    set cat_id = {cat_id}, subcat_id = {subcat_id}
-    where id in ({placeholders})
-    
-    """
-    cur.execute(q)
-    conn.commit()
+    q = f""" update corporate_items set cat_id = {cat_id}, subcat_id = {subcat_id} where id in ({placeholders}) """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(q)
+            conn.commit()
 
