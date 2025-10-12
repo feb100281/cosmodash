@@ -53,8 +53,8 @@ class AGModal:
         sales_data['date'] = pd.to_datetime(sales_data['date'])
         sales_data['sd_eom'] = sales_data['date'] + pd.offsets.MonthEnd(0)
         sales_data['month_id'] = sales_data['sd_eom'].dt.strftime('%Y-%m')
-        sales_data['amount'] = sales_data['dt'] + sales_data['cr']
-        sales_data['quant'] = sales_data['quant_dt'] + sales_data['quant_cr']
+        sales_data['amount'] = sales_data['dt'] - sales_data['cr']
+        sales_data['quant'] = sales_data['quant_dt'] - sales_data['quant_cr']
         # Расчитываем цену по продажам но можно будет и по выручки
         sales_data['price'] = np.where(sales_data['quant_dt']>0, sales_data['dt']/sales_data['quant_dt'], 0)        
                 
