@@ -85,6 +85,7 @@ def delta_node(curr, prev, good_when_up=True, as_pct=True, w=110, ta="left", kin
 
 class StoresComponents:
     def __init__(self, df_id=None, period_label: str | None = None):
+
         self.df_id = df_id if df_id is not None else None
         self.period_label = period_label
 
@@ -109,6 +110,9 @@ class StoresComponents:
         self.heatmap_range_id  = {'type':'st_heatmap_range','index':'1'}
         self.daily_store_id    = {'type':'st_daily','index':'1'}
         self.heatmap_scope_id = {'type':'st_heatmap_scope','index':'1'}
+        
+
+        self.period_total_badge_id = {'type': 'period_total_badge', 'index': '1'}
  
 
     # ======================= COMPONENTS =======================
@@ -307,8 +311,9 @@ class StoresComponents:
         if df.empty:
             return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md")
 
-        # --- выбор метрики (amount | cr)
-        val_col = "amount" if (metric or "amount") in ("amount", "aov", "amount") else "cr"
+        # --- выбор метрики (amount | dt | cr)
+        metric_str = str(metric).lower() if metric else "amount"
+        val_col = "amount" if metric_str in ("amount", "aov", "dt") else "cr"
         day_sum = df.groupby(df["date"].dt.date)[val_col].sum().astype(float)
 
         # --- сетка недель (Пн–Вс)
@@ -447,7 +452,7 @@ class StoresComponents:
             plot_bgcolor=graph_bg,
             paper_bgcolor=graph_bg,
             title=dict(
-                text=f"Календарь {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}",
+                # text=f"Календарь {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}",
                 x=0.5, xanchor="center",
                 font=dict(size=16, color=text_primary,
                         family="Inter, system-ui, -apple-system, Segoe UI")
@@ -523,15 +528,7 @@ class StoresComponents:
             controls = dmc.Group(
                 justify="space-between", align="center", wrap="wrap", gap="sm",
                 children=[
-                    # dmc.Group(gap="xs", align="center", children=[
-                    #     DashIconify(icon="tabler:calendar-due", width=18),
-                    #     dmc.Text("Календарь за период", fw=700),
-                    #     ClickOnNotice(
-                    #         notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
-                    #         icon="streamline-freehand-color:show-hat-magician-1",  
-                    #         color="#007BFF",
-                    #     ).component,
-                    # ]),
+
                     
                     dmc.Stack(
                             gap="xs",
@@ -544,7 +541,7 @@ class StoresComponents:
                                     ],
                                 ),
                                 ClickOnNotice(
-                                    notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                                    notice="Кликните на график, чтобы просмотреть подробности",
                                     icon="streamline-ultimate:task-finger-show",
                                     color="#007BFF",
                                     icon_width=40,
@@ -805,6 +802,19 @@ class StoresComponents:
             default_series = [s for s in series_full if s["name"] == "Все магазины"]
 
             return dmc.Stack([
+                # Блок с бейджем "Итого за период"
+             dmc.Group(
+                align="center", gap="xs",
+                children=[
+                    dmc.Text("Итого за период:", size="sm", c="dimmed"),
+                    dmc.Badge(
+                        id={'type': 'period_total_badge', 'index': '1'},
+                        variant="filled", color="teal", size="lg", radius="sm",
+                        children=""  # обновится коллбэком
+                    ),
+                ],
+            ),
+
                 dmc.AreaChart(
                     id=self.stores_area_chart_id, h=600, dataKey='month_name',
                     data=data, series=default_series,
@@ -815,14 +825,12 @@ class StoresComponents:
                     },
                     withPointLabels=False,
                     valueFormatter={"function": "formatNumberIntl"},
-                    withLegend=True, 
+                    withLegend=True,
                     connectNulls=True,
                     yAxisProps={"domain": ["dataMin", "auto"]},
                 ),
                 dcc.Store(id=self.chart_data_store_id, data=data, storage_type='memory'),
                 dcc.Store(id=self.chart_series_store_id, data=series_full, storage_type='memory'),
-
-              
             ])
 
        
@@ -1390,7 +1398,7 @@ class StoresComponents:
                                 dmc.Title('График продаж по магазинам', order=4),
                                 dmc.Space(h=10),
                                 ClickOnNotice(
-                                        notice="Кликните на график, чтобы просмотреть отчет по заказам за выбранный месяц",
+                                        notice="Кликните на график, чтобы просмотреть отчет за выбранный месяц",
                                         icon="streamline-ultimate:task-finger-show",  
                                         color="#007BFF",
                                     ).component,
@@ -1465,125 +1473,246 @@ class StoresComponents:
 
 
         # === главный апдейт: фильтры + выбор метрики ===
+        # @app.callback(
+        #     Output({'type': st_filter,  'index': MATCH}, 'data'),        # options "Магазин"
+        #     Output({'type': area_chart, 'index': MATCH}, 'series'),      # серии
+        #     Output({'type': area_chart, 'index': MATCH}, 'data'),        # данные графика
+        #     Output({'type': data_store, 'index': MATCH}, 'data'),        # кэш данных
+        #     Output({'type': area_chart, 'index': MATCH}, 'valueFormatter'),  # форматтер значений
+        #     Input({'type': ch_filter,   'index': MATCH}, 'value'),
+        #     Input({'type': rg_filter,   'index': MATCH}, 'value'),
+        #     Input({'type': st_filter,   'index': MATCH}, 'value'),
+        #     Input({'type': metric_id,   'index': MATCH}, 'value'),       # amount | ret_amt_abs | ret_qty_abs | ret_coef
+        #     State({'type': filter_data, 'index': MATCH}, 'data'),
+        #     State({'type': series_store,'index': MATCH}, 'data'),
+        #     State({'type': 'st_raw_eom','index': MATCH}, 'data'),
+        #     prevent_initial_call=True,
+        # )
+        # def update_chart(ch_val, rg_val, st_val, metric, filter_df, series_val, raw_eom):
+        #     def L(x):
+        #         if x is None: return []
+        #         return x if isinstance(x, list) else [x]
+
+        #     # --- фильтрация сырых данных
+        #     rdf = pd.DataFrame(raw_eom)
+        #     if L(ch_val): rdf = rdf[rdf['chanel'].isin(L(ch_val))]
+        #     if L(rg_val): rdf = rdf[rdf['store_region'].isin(L(rg_val))]
+            
+            
+
+        #     # --- ветки по метрике
+        #     if metric == 'amount':
+        #         formatter = {"function": "formatNumberIntl"}
+        #         pivot = (
+        #             rdf.pivot_table(index='eom', columns='store_gr_name', values='amount', aggfunc='sum')
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+
+        #     elif metric == 'ret_amt_abs':
+        #         formatter = {"function": "formatNumberIntl"}
+        #         pivot = (
+        #             rdf.pivot_table(index='eom', columns='store_gr_name', values='cr', aggfunc='sum')
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+
+        #     elif metric == 'ret_qty_abs':
+        #         formatter = {"function": "formatIntl"}   # целые значения
+        #         pivot = (
+        #             rdf.pivot_table(index='eom', columns='store_gr_name', values='quant_cr', aggfunc='sum')
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+            
+        #     elif metric == 'count_order':
+        #         formatter = {"function": "formatIntl"}  # целые
+        #         pivot = (
+        #             rdf.pivot_table(
+        #                 index='eom',
+        #                 columns='store_gr_name',
+        #                 values='orders',
+        #                 aggfunc='first'   # <--- не суммируем повторно
+        #             )
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+        #         # «Все магазины» = сумма по магазинам
+        #         store_cols = [c for c in pivot.columns if c not in ['eom']]
+        #         pivot['Все магазины'] = pivot[store_cols].sum(axis=1)
+
+
+        #     elif metric == 'avr_recept':
+        #         # Средний чек = сумма amount / сумма orders
+        #         formatter = {"function": "formatNumberIntl"}
+        #         by = (
+        #             rdf.groupby(['eom','store_gr_name'])
+        #             .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
+        #             .reset_index()
+        #         )
+        #         by['value'] = np.where(by['orders'] > 0, by['amount_sum'] / by['orders'], 0.0)
+        #         pivot = (
+        #             by.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+                
+        #         tot = (
+        #             rdf.groupby('eom')
+        #             .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
+        #             .reset_index()
+        #         )
+        #         tot['Все магазины'] = np.where(tot['orders'] > 0, tot['amount_sum'] / tot['orders'], 0.0)
+        #         pivot = pivot.merge(tot[['eom','Все магазины']], on='eom', how='left')
+
+            
+            
+
+        #     else:  # 'ret_coef' — коэффициент возвратов (₽), %
+        #         formatter = {"function": "formatPercentIntl"}
+        #         g = rdf.groupby(['eom','store_gr_name'])[['cr','dt']].sum().reset_index()
+        #         g['value'] = np.where(g['dt'] > 0, 100.0 * g['cr'] / g['dt'], 0.0)
+        #         pivot = (
+        #             g.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
+        #             .fillna(0).sort_index().reset_index()
+        #         )
+        #         # pooled ratio для «Все магазины»
+        #         tot = rdf.groupby('eom')[['cr','dt']].sum().reset_index()
+        #         tot['Все магазины'] = np.where(tot['dt'] > 0, 100.0 * tot['cr'] / tot['dt'], 0.0)
+        #         pivot = pivot.merge(tot[['eom','Все магазины']], on='eom', how='left')
+
+        #     # --- сумма «Все магазины» для абсолютных метрик
+        #     if metric in ('amount', 'ret_amt_abs', 'ret_qty_abs'):
+        #         store_cols = [c for c in pivot.columns if c not in ['eom']]
+        #         pivot['Все магазины'] = pivot[store_cols].sum(axis=1)
+
+        #     # --- оформление дат
+        #     pivot['eom'] = pd.to_datetime(pivot['eom'], errors='coerce')
+        #     pivot = pivot.sort_values('eom').reset_index(drop=True)
+        #     pivot['month_name'] = pivot['eom'].dt.strftime("%b\u202F%y").str.capitalize()
+
+        #     # переносим month_name в конец
+        #     cols_no_mn = [c for c in pivot.columns if c != 'month_name']
+        #     pivot = pivot[cols_no_mn + ['month_name']]
+        #     chart_data = pivot.to_dict('records')
+
+        #     # --- options для "Магазин" после фильтров
+        #     fdf = pd.DataFrame(filter_df)
+        #     if L(ch_val): fdf = fdf[fdf['chanel'].isin(L(ch_val))]
+        #     if L(rg_val): fdf = fdf[fdf['store_region'].isin(L(rg_val))]
+        #     store_options = [{"value": s, "label": s} for s in sorted(fdf['store_gr_name'].unique().tolist())]
+
+        #     available = {o["value"] for o in store_options}
+        #     selected  = [s for s in L(st_val) if s in available]
+
+        #     def series_by(names): return [s for s in series_val if s["name"] in names]
+        #     def total_series():   return [s for s in series_val if s["name"] == "Все магазины"]
+
+        #     out_series = series_by(selected) if selected else total_series()
+
+        #     return store_options, out_series, chart_data, chart_data, formatter
+        
+        
+        
+
+
+        def _fmt_number(v, as_int=False):
+            if as_int:
+                s = f"{int(round(v)):,}"
+            else:
+                s = f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.2f}"
+            return s.replace(",", " ").replace(".00", "")
+
+        def _fmt_currency(v):
+            return _fmt_number(v, as_int=False) + " ₽"
+
+        def _fmt_percent(v):
+            # ожидаем v уже в процентах (напр., 12.34)
+            return f"{v:.2f}%".replace(".", ",")
+
+
         @app.callback(
-            Output({'type': st_filter,  'index': MATCH}, 'data'),        # options "Магазин"
-            Output({'type': area_chart, 'index': MATCH}, 'series'),      # серии
-            Output({'type': area_chart, 'index': MATCH}, 'data'),        # данные графика
-            Output({'type': data_store, 'index': MATCH}, 'data'),        # кэш данных
-            Output({'type': area_chart, 'index': MATCH}, 'valueFormatter'),  # форматтер значений
-            Input({'type': ch_filter,   'index': MATCH}, 'value'),
-            Input({'type': rg_filter,   'index': MATCH}, 'value'),
-            Input({'type': st_filter,   'index': MATCH}, 'value'),
-            Input({'type': metric_id,   'index': MATCH}, 'value'),       # amount | ret_amt_abs | ret_qty_abs | ret_coef
-            State({'type': filter_data, 'index': MATCH}, 'data'),
-            State({'type': series_store,'index': MATCH}, 'data'),
-            State({'type': 'st_raw_eom','index': MATCH}, 'data'),
-            prevent_initial_call=True,
+            Output({'type': st_filter,            'index': MATCH}, 'data'),          # options "Магазин"
+            Output({'type': area_chart,           'index': MATCH}, 'series'),        # серии
+            Output({'type': area_chart,           'index': MATCH}, 'data'),          # данные графика
+            Output({'type': data_store,           'index': MATCH}, 'data'),          # кэш данных
+            Output({'type': area_chart,           'index': MATCH}, 'valueFormatter'),# форматтер
+            Output({'type': 'period_total_badge', 'index': MATCH}, 'children'),      # бейдж
+            Input({'type': ch_filter,             'index': MATCH}, 'value'),
+            Input({'type': rg_filter,             'index': MATCH}, 'value'),
+            Input({'type': st_filter,             'index': MATCH}, 'value'),
+            Input({'type': metric_id,             'index': MATCH}, 'value'),         # amount | ret_amt_abs | ret_qty_abs | ret_coef | count_order | avr_recept
+            State({'type': filter_data,           'index': MATCH}, 'data'),
+            State({'type': series_store,          'index': MATCH}, 'data'),
+            State({'type': 'st_raw_eom',          'index': MATCH}, 'data'),
+            prevent_initial_call=False,
         )
         def update_chart(ch_val, rg_val, st_val, metric, filter_df, series_val, raw_eom):
-            def L(x):
-                if x is None: return []
-                return x if isinstance(x, list) else [x]
+            def L(x): 
+                return [] if x is None else (x if isinstance(x, list) else [x])
 
-            # --- фильтрация сырых данных
+            # --- сырые данные + фильтры канал/регион
             rdf = pd.DataFrame(raw_eom)
             if L(ch_val): rdf = rdf[rdf['chanel'].isin(L(ch_val))]
             if L(rg_val): rdf = rdf[rdf['store_region'].isin(L(rg_val))]
-            
-            
 
-            # --- ветки по метрике
+            # --- графиковый pivot + formatter
             if metric == 'amount':
                 formatter = {"function": "formatNumberIntl"}
-                pivot = (
-                    rdf.pivot_table(index='eom', columns='store_gr_name', values='amount', aggfunc='sum')
-                    .fillna(0).sort_index().reset_index()
-                )
+                pivot = (rdf.pivot_table(index='eom', columns='store_gr_name', values='amount', aggfunc='sum')
+                        .fillna(0).sort_index().reset_index())
 
             elif metric == 'ret_amt_abs':
                 formatter = {"function": "formatNumberIntl"}
-                pivot = (
-                    rdf.pivot_table(index='eom', columns='store_gr_name', values='cr', aggfunc='sum')
-                    .fillna(0).sort_index().reset_index()
-                )
+                pivot = (rdf.pivot_table(index='eom', columns='store_gr_name', values='cr', aggfunc='sum')
+                        .fillna(0).sort_index().reset_index())
 
             elif metric == 'ret_qty_abs':
-                formatter = {"function": "formatIntl"}   # целые значения
-                pivot = (
-                    rdf.pivot_table(index='eom', columns='store_gr_name', values='quant_cr', aggfunc='sum')
-                    .fillna(0).sort_index().reset_index()
-                )
-            
+                formatter = {"function": "formatIntl"}
+                pivot = (rdf.pivot_table(index='eom', columns='store_gr_name', values='quant_cr', aggfunc='sum')
+                        .fillna(0).sort_index().reset_index())
+
             elif metric == 'count_order':
-                formatter = {"function": "formatIntl"}  # целые
-                pivot = (
-                    rdf.pivot_table(
-                        index='eom',
-                        columns='store_gr_name',
-                        values='orders',
-                        aggfunc='first'   # <--- не суммируем повторно
-                    )
-                    .fillna(0).sort_index().reset_index()
-                )
-                # «Все магазины» = сумма по магазинам
+                formatter = {"function": "formatIntl"}
+                pivot = (rdf.pivot_table(index='eom', columns='store_gr_name', values='orders', aggfunc='first')
+                        .fillna(0).sort_index().reset_index())
                 store_cols = [c for c in pivot.columns if c not in ['eom']]
                 pivot['Все магазины'] = pivot[store_cols].sum(axis=1)
 
-
             elif metric == 'avr_recept':
-                # Средний чек = сумма amount / сумма orders
+                # средний чек по магазинам на месяц
                 formatter = {"function": "formatNumberIntl"}
-                by = (
-                    rdf.groupby(['eom','store_gr_name'])
-                    .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
-                    .reset_index()
-                )
+                by = (rdf.groupby(['eom','store_gr_name'])
+                        .agg(amount_sum=('dt','sum'), orders=('orders','sum')).reset_index())
                 by['value'] = np.where(by['orders'] > 0, by['amount_sum'] / by['orders'], 0.0)
-                pivot = (
-                    by.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
-                    .fillna(0).sort_index().reset_index()
-                )
-                
-                tot = (
-                    rdf.groupby('eom')
-                    .agg(amount_sum=('dt','sum'), orders=('orders','sum'))
-                    .reset_index()
-                )
+                pivot = (by.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
+                        .fillna(0).sort_index().reset_index())
+
+                # «Все магазины» — pooled на месяц (Σamount / Σorders)
+                tot = (rdf.groupby('eom').agg(amount_sum=('dt','sum'), orders=('orders','sum')).reset_index())
                 tot['Все магазины'] = np.where(tot['orders'] > 0, tot['amount_sum'] / tot['orders'], 0.0)
                 pivot = pivot.merge(tot[['eom','Все магазины']], on='eom', how='left')
 
-            
-            
-
-            else:  # 'ret_coef' — коэффициент возвратов (₽), %
+            else:  # ret_coef, %
                 formatter = {"function": "formatPercentIntl"}
                 g = rdf.groupby(['eom','store_gr_name'])[['cr','dt']].sum().reset_index()
                 g['value'] = np.where(g['dt'] > 0, 100.0 * g['cr'] / g['dt'], 0.0)
-                pivot = (
-                    g.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
-                    .fillna(0).sort_index().reset_index()
-                )
-                # pooled ratio для «Все магазины»
+                pivot = (g.pivot_table(index='eom', columns='store_gr_name', values='value', aggfunc='mean')
+                        .fillna(0).sort_index().reset_index())
+                # «Все магазины» — pooled на месяц
                 tot = rdf.groupby('eom')[['cr','dt']].sum().reset_index()
                 tot['Все магазины'] = np.where(tot['dt'] > 0, 100.0 * tot['cr'] / tot['dt'], 0.0)
                 pivot = pivot.merge(tot[['eom','Все магазины']], on='eom', how='left')
 
-            # --- сумма «Все магазины» для абсолютных метрик
+            # абсолютные метрики — строим «Все магазины» как сумму колонок
             if metric in ('amount', 'ret_amt_abs', 'ret_qty_abs'):
                 store_cols = [c for c in pivot.columns if c not in ['eom']]
                 pivot['Все магазины'] = pivot[store_cols].sum(axis=1)
 
-            # --- оформление дат
+            # --- подготовка данных для графика
             pivot['eom'] = pd.to_datetime(pivot['eom'], errors='coerce')
             pivot = pivot.sort_values('eom').reset_index(drop=True)
             pivot['month_name'] = pivot['eom'].dt.strftime("%b\u202F%y").str.capitalize()
-
-            # переносим month_name в конец
             cols_no_mn = [c for c in pivot.columns if c != 'month_name']
             pivot = pivot[cols_no_mn + ['month_name']]
             chart_data = pivot.to_dict('records')
 
-            # --- options для "Магазин" после фильтров
+            # --- options для селекта магазинов
             fdf = pd.DataFrame(filter_df)
             if L(ch_val): fdf = fdf[fdf['chanel'].isin(L(ch_val))]
             if L(rg_val): fdf = fdf[fdf['store_region'].isin(L(rg_val))]
@@ -1594,10 +1723,57 @@ class StoresComponents:
 
             def series_by(names): return [s for s in series_val if s["name"] in names]
             def total_series():   return [s for s in series_val if s["name"] == "Все магазины"]
-
             out_series = series_by(selected) if selected else total_series()
 
-            return store_options, out_series, chart_data, chart_data, formatter
+            # --- данные только по выбранным магазинам для бейджа
+            rdf_sel = rdf[rdf['store_gr_name'].isin(selected)] if selected else rdf
+
+            # --- БЕЙДЖ "Итого за период" (реагирует на выбранные магазины)
+            if metric == 'amount':
+                total_val = pd.to_numeric(rdf_sel['amount'], errors='coerce').sum()
+                badge_text = _fmt_currency(float(total_val))
+
+            elif metric == 'ret_amt_abs':
+                total_val = pd.to_numeric(rdf_sel['cr'], errors='coerce').sum()
+                badge_text = _fmt_currency(float(total_val))
+
+            elif metric == 'ret_qty_abs':
+                total_val = pd.to_numeric(rdf_sel['quant_cr'], errors='coerce').sum()
+                badge_text = _fmt_number(float(total_val), as_int=True)
+
+            elif metric == 'count_order':
+                # уникальные значения orders на (eom, store), затем суммируем
+                orders_sum = (
+                    rdf_sel.dropna(subset=['eom','store_gr_name'])
+                        .sort_values(['eom','store_gr_name'])
+                        .groupby(['eom','store_gr_name'])['orders']
+                        .first()
+                        .sum()
+                )
+                badge_text = _fmt_number(float(orders_sum), as_int=True)
+
+            elif metric == 'avr_recept':
+                # средний чек: среднее по месяцам, где чек > 0, по выбранным магазинам
+                monthly = (rdf_sel.groupby('eom', as_index=False)
+                                .agg(amount_sum=('dt','sum'), orders=('orders','sum')))
+                monthly['avg'] = np.where(monthly['orders'] > 0,
+                                        monthly['amount_sum'] / monthly['orders'],
+                                        0.0)
+                vals = pd.to_numeric(monthly['avg'], errors='coerce')
+                vals_pos = vals[vals > 0]
+                total_val = float(vals_pos.mean()) if not vals_pos.empty else 0.0
+                badge_text = _fmt_currency(total_val)
+
+            else:  # ret_coef: pooled по выбранным за весь период
+                cr_sum = pd.to_numeric(rdf_sel['cr'], errors='coerce').sum()
+                dt_sum = pd.to_numeric(rdf_sel['dt'], errors='coerce').sum()
+                total_val = 100.0 * cr_sum / dt_sum if dt_sum and dt_sum > 0 else 0.0
+                badge_text = _fmt_percent(total_val)
+
+            return store_options, out_series, chart_data, chart_data, formatter, badge_text
+
+
+
 
 
 
@@ -2538,9 +2714,12 @@ class StoresComponents:
         )
         def render_period_heatmap(metric, date_range, ch_val, rg_val, st_val, theme_checked, daily_data):
             import pandas as pd
+            from dash import html
+            import dash_mantine_components as dmc
+
             def L(x): return [] if x is None else (x if isinstance(x, list) else [x])
 
-            # --- формируем подпись для бейджа ---
+            # --- формируем подпись для бейджа (охват)
             stores = L(st_val)
             if not stores:
                 scope_text = "Все магазины"
@@ -2555,6 +2734,7 @@ class StoresComponents:
             if df.empty:
                 return dmc.Alert("Нет данных для теплокарты", color="gray", variant="light", radius="md"), scope_text
 
+            # фильтры
             if L(ch_val):
                 df = df[df['chanel'].isin(L(ch_val))]
             if L(rg_val):
@@ -2562,7 +2742,7 @@ class StoresComponents:
             if L(st_val):
                 df = df[df['store_gr_name'].isin(L(st_val))]
 
-            # --- определяем период ---
+            # период
             if date_range and len(date_range) == 2 and date_range[0] and date_range[1]:
                 start = pd.to_datetime(date_range[0])
                 end = pd.to_datetime(date_range[1])
@@ -2576,10 +2756,45 @@ class StoresComponents:
             if df.empty:
                 return dmc.Alert("За выбранный период данных нет", color="yellow", variant="light", radius="md"), scope_text
 
-            # --- строим теплокарту ---
+            # --- подготовка числовых колонок и dt
+            for c in ['amount', 'cr', 'quant']:
+                if c not in df.columns:
+                    df[c] = 0
+            num_cols = ['amount', 'cr', 'quant']
+            df[num_cols] = df[num_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+            if 'dt' not in df.columns:
+                df['dt'] = df['amount'] + df['cr']
+
+            # --- ИТОГИ ЗА ПЕРИОД
+            s_dt     = float(df['dt'].sum())
+            s_amount = float(df['amount'].sum())
+            s_cr     = float(df['cr'].sum())
+
+            def fmt(v):
+                return "₽" + f"{v:,.0f}".replace(",", " ")
+
+            header = dmc.Group(
+                gap="sm",
+                mb="xs",
+                wrap="wrap",
+                children=[
+                    dmc.Badge(f"Итого продажи: {fmt(s_dt)}",    color="blue",  radius="xs", variant="filled"),
+                    dmc.Badge(f"Итого выручка: {fmt(s_amount)}", color="green", radius="xs", variant="filled"),
+                    dmc.Badge(f"Итого возвраты: {fmt(s_cr)}",    color="red",   radius="xs", variant="filled"),
+                    dmc.Divider(orientation="vertical"),
+                    dmc.Badge(
+                        f"{start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}",
+                        color="blue", radius="xs", variant="light"
+                    ),
+                ]
+            )
+
+            # --- строим теплокарту
             graph = self._heatmap_period_block(df, start, end, metric or "amount", is_dark=bool(theme_checked))
 
-            return graph, scope_text
+            # ⬅️ возвращаем шапку + график, а во второй выход как и раньше — scope_text для твоего отдельного бейджа
+            return html.Div([header, graph]), scope_text
+
 
    
 

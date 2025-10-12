@@ -723,7 +723,12 @@ class AreaChartModal:
                 dmc.Space(h=20),
                 dcc.Markdown('### Изменения средних чеков по магазинам',className="markdown-body"),
                 dmc.Space(h=5),
-                InDevNotice().in_dev_conteines
+                # InDevNotice().in_dev_conteines
+                ClickOnNotice(
+                notice="Кликните на график, чтобы просмотреть заказы чеков по выбранным ценовым категориям",
+                icon="streamline-ultimate:task-finger-show",  
+                color="#007BFF",
+            ).component,
                 
                     ],
                     fluid=True,    

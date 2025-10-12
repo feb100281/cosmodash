@@ -17,10 +17,13 @@ def get_items(ids_int):
         i.init_date,
         GROUP_CONCAT(DISTINCT m.name ORDER BY m.name SEPARATOR ',') AS manu,
         GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ',') AS brend
+
+        
         from sales_salesdata as s 
         left join corporate_items as i on i.id = s.item_id
         left join corporate_itemmanufacturer as m on m.id = i.manufacturer_id
         left join corporate_itembrend as b on b.id = i.brend_id
+
 
         where item_id in  ({placeholders})
         group by fullname, init_date
@@ -51,6 +54,7 @@ def fletch_dataset(start, end):
             parent.name AS parent_cat,
             subcat.id AS subcat_id,
             subcat.name AS subcat
+      
         FROM
             sales_salesdata AS s
                 LEFT JOIN
