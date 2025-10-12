@@ -26,13 +26,27 @@ dagfuncs.RussianDate = function(date) {
 
 // Рубли
 
-dagfuncs.RUB = function (number) {
-    return Intl.NumberFormat('ru-RU', {
-        style: 'currency',
-        currency: 'RUB',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(number);
+// Рубли - ИСПРАВЛЕННАЯ ФУНКЦИЯ
+dagfuncs.RUB = function(number) {
+    try {
+        // Преобразуем в число, если это строка
+        const num = typeof number === 'string' ? parseFloat(number) : number;
+        
+        // Проверяем, что это валидное число
+        if (num === null || num === undefined || isNaN(num)) {
+            return "0 ₽";
+        }
+        
+        return new Intl.NumberFormat('ru-RU', {
+            style: 'currency',
+            currency: 'RUB',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(num);
+    } catch (error) {
+        console.error('RUB formatting error:', error);
+        return "0 ₽";
+    }
 }
 
 

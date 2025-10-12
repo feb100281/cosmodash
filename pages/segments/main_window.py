@@ -1,7 +1,7 @@
 import pandas as pd
+import numpy as np
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
-import json
 import dash_ag_grid as dag
 
 
@@ -12,10 +12,12 @@ from data import (
     delete_df_from_redis,
     save_df_to_redis,
 )
-from components import MonthSlider, DATES
-from dash import dcc, Input, Output, State, no_update
-from .db_queries import get_items, fletch_dataset
+from components import MonthSlider, DATES, COLORS_BY_SHADE, COLORS_BY_COLOR
+from dash import dcc, Input, Output, State, no_update, MATCH
+from .db_queries import get_items, fletch_dataset, fletch_agents, fletch_stores
 from .drawler import CATS_MANAGEMENT
+from .ag_modal import AGModal
+AG_MODAL = AGModal()
 
 COLS = [
     "date",
@@ -53,10 +55,6 @@ def fmt_rub(x):
 def fmt_pct(x):
     try: return f"{float(x):.2f}%".replace(".", ",")
     except: return "0,00%"
-
-
-
-
 
 def empty_placeholder():
     return dmc.Paper(
@@ -202,12 +200,83 @@ def pareto_block(df: pd.DataFrame):
         dmc.Space(h=6),
         dmc.Progress(value=float(top["cum_share"].iloc[-1] if not top.empty else 0), size="sm", striped=True, radius="xs"),
     ])
+
+# Блок по магазинам/менеджерам
+def stores_block(df_stores: pd.DataFrame):
+    dfs = df_stores.copy()
+
+        
+    dfs['rank'] = dfs['amount'].rank(method='min', ascending=False)
+    dfs['store_sales'] = np.where(dfs['rank'] <= 5, dfs['store_gr_name'], 'Другие магазины')
+    dfs = dfs.pivot_table(index='store_sales', values='amount', aggfunc='sum').reset_index().sort_values(by='amount', ascending=False)
+
+    store_data = []
+    for i, row in enumerate(dfs.itertuples(index=False)):
+        color = COLORS_BY_SHADE[i % len(COLORS_BY_SHADE)]  # чтобы не выйти за пределы
+        store_data.append({
+            "name": row.store_sales,
+            "value": float(row.amount),  # на всякий случай преобразуем в число
+            "color": color
+        })
+    
+    stores_list = dmc.List(
+        [
+            dmc.ListItem(
+                f"{name}: {value/1_000_000:,.2f} млн ₽".replace(",", " "),
+                icon=dmc.ThemeIcon(
+                    DashIconify(icon="tdesign:shop-filled", width=16),
+                    size=24,
+                    radius="xl",
+                    color=color_shop,
+                    variant="light",
+                ),
+            )
+            for name, value, color_shop in zip(dfs['store_sales'], dfs['amount'], COLORS_BY_SHADE)
+        ]
+    )
     
     
+    return dmc.Box(
+        [
+            dmc.Space(h=6),
+            dmc.Divider(label="Магазины", my="md"),
+            dmc.Title("Распределение продаж по магазинам", order=5),
+            dmc.Space(h=6),
+            
+            dmc.Group(
+                [  
+                 dmc.Stack(
+                     [
+                        
+                        stores_list
+                     ]
+                    ),
+                
+                    
+                    dmc.Stack(
+                     [
+                        
+                        dmc.PieChart(
+                        h=200,
+                        data=store_data,
+                        labelsType="percent",
+                        withTooltip=True,
+                        tooltipDataSource="segment",
+                        mx="auto",
+                        strokeWidth=2,
+                        withLabels=True
+                     )
+                     ]
+                    ),
+                ],
+                gap='xl',
+                grow=True,
+            )
+        ],
+       
+    )
 
-
-
-def insights_block(df: pd.DataFrame):
+def insights_block(df: pd.DataFrame, tot_revenue: float, agent_share: float):
     d = df.copy()
 
     # числовые столбцы -> float
@@ -215,6 +284,8 @@ def insights_block(df: pd.DataFrame):
         d[c] = pd.to_numeric(d.get(c), errors="coerce").fillna(0)
 
     d["amount"]  = d["dt"] - d["cr"]
+    d['tot_revenue'] = tot_revenue
+    d['revenue_pct'] = (d['amount'] / d['tot_revenue'] * 100).fillna(0)
     d["quant"]   = d["quant_dt"] - d["quant_cr"]
     d["ret_pct"] = (d["cr"] / d["dt"].replace(0, pd.NA)).fillna(0) * 100
 
@@ -226,6 +297,7 @@ def insights_block(df: pd.DataFrame):
     total_dt = float(d["dt"].sum())
     total_cr = float(d["cr"].sum())
     amount   = float(d["amount"].sum())
+    revenue_pct = round(float(d["revenue_pct"].sum()), 2)
     q_net    = float(d["quant"].sum())
     avg_price = amount / q_net if q_net > 0 else 0.0
     ret_coef  = (total_cr / total_dt * 100) if total_dt > 0 else 0.0
@@ -257,10 +329,21 @@ def insights_block(df: pd.DataFrame):
         dmc.Text(f"Средняя цена: {fmt_compact(avg_price, money=True)}; выручка: {fmt_compact(amount, money=True)}."),
         dmc.Group(gap="lg", wrap="wrap", children=[
             dmc.Stack(align="center", gap=0, children=[
+                dmc.RingProgress(sections=[{"value": float(revenue_pct), "color": "blue"}], size=80, thickness=10),
+                dmc.Text("Доля в выручке", size="xs", c="dimmed"),
+                dmc.Text(f"{revenue_pct:.2f}%".replace(".", ","), fw=600),
+            ]),
+            dmc.Stack(align="center", gap=0, children=[
                 dmc.RingProgress(sections=[{"value": float(ret_coef), "color": "orange"}], size=80, thickness=10),
                 dmc.Text("Коэф. возвратов", size="xs", c="dimmed"),
                 dmc.Text(f"{ret_coef:.2f}%".replace(".", ","), fw=600),
             ]),
+            dmc.Stack(align="center", gap=0, children=[
+                dmc.RingProgress(sections=[{"value": float(agent_share), "color": "cyan"}], size=80, thickness=10),
+                dmc.Text("Доля дизайнеров", size="xs", c="dimmed"),
+                dmc.Text(f"{agent_share:.2f}%".replace(".", ","), fw=600),
+            ]),
+            
             (dmc.Stack(align="center", gap=0, children=[
                 dmc.RingProgress(sections=[{"value": float(designer_share or 0), "color": "grape"}], size=80, thickness=10),
                 dmc.Text("Доля «дизайнера»", size="xs", c="dimmed"),
@@ -423,6 +506,7 @@ class SegmentMainWindow:
         self.assing_cat = "segments_assign_cat_action_button"
         self.assing_manu = "segments_assign_manu_action_button"
         self.assing_brend = "segments_assign_brend_action_button"
+        self.ag_grid_id = {'type': 'segments_ag_grid', 'index': '1'}
 
         self.mslider = MonthSlider(id=self.mslider_id)
         self.tree = dmc.Tree(
@@ -507,7 +591,7 @@ class SegmentMainWindow:
             "valueFormatter": {"function": "RussianDate(params.value)"}},
 
             {"headerName": "Выручка", "field": "amount",
-            # "valueFormatter": {"function": "RUB(params.value)"},
+            "valueFormatter": {"function": "RUB(params.value)"},
             "cellClass": "ag-firstcol-bg"},
 
             {"headerName": "Всего продано", "field": "quant",
@@ -518,6 +602,9 @@ class SegmentMainWindow:
 
             {"headerName": "Бренд", "field": "brend"},
             {"headerName": "Производитель", "field": "manu"},
+            {"headerName": "Дизайнеры", "field": "agent"},
+            {'headerName': "Артикль", "field": ""},
+            {'headerName':'id', 'field':'item_id', 'hide':True},
         ]
 
         return dmc.Stack(
@@ -526,11 +613,21 @@ class SegmentMainWindow:
                 dmc.Title("Выбранные позиции", order=4),
                 dmc.Space(h=6),
                 dag.AgGrid(
-                    id="orders-grid",
+                    id=self.ag_grid_id,
                     rowData=df.to_dict("records"),
                     columnDefs=cols,
                     defaultColDef={"sortable": True, "filter": True, "resizable": True},
-                    dashGridOptions={"rowSelection": "single", "pagination": True, "paginationPageSize": 20},
+                    dashGridOptions={
+                    "rowSelection": "single", 
+                    "pagination": True, 
+                    "paginationPageSize": 20,
+                    "suppressRowClickSelection": False,
+                    #"enableCellTextSelection": True,
+                    "ensureDomOrder": True,
+                    #"onRowDoubleClicked": {"function": "function(params) { window.dashAgGridFunctions.onRowDoubleClick(params); }"}
+                },
+                    
+                # getRowId="function(params) { return params.data.fullname + '_' + params.data.init_date; }",
                     style={"height": "600px", "width": "100%"},
                     className=rrgrid_className,
                     dangerously_allow_code=True,
@@ -710,6 +807,7 @@ class SegmentMainWindow:
 
                         dmc.Divider(label="Действия", labelPosition="left"),
                         dmc.Flex(self.actions, justify="flex-start"),
+                       
                     ],
                 )
             ],
@@ -790,6 +888,7 @@ class SegmentMainWindow:
                 dcc.Store(id="dummy_imputs_for_segment_render"),
                 self.df_store,
                 CATS_MANAGEMENT.make_drawler(),
+                AG_MODAL.layout()
             ],
         )
 
@@ -797,7 +896,9 @@ class SegmentMainWindow:
 
     def register_callbacks(self, app):
         
-        
+        ag_grid = self.ag_grid_id['type']
+        ag_modal = AG_MODAL.modal_id['type']
+        model_container = AG_MODAL.modal_conteiner_id['type']
         
         @app.callback(
             Output(self.df_store_id, "data"),
@@ -809,7 +910,7 @@ class SegmentMainWindow:
         )
         def update_df(slider_value, dummy, store_data):
             start, end = id_to_months(slider_value[0], slider_value[1])
-            start: pd.Timestamp = pd.to_datetime(start) + pd.offsets.MonthBegin(0)
+            start: pd.Timestamp = pd.to_datetime(start) + pd.offsets.MonthBegin(-1)
             end: pd.Timestamp = pd.to_datetime(end) + pd.offsets.MonthEnd(0)
 
             start = start.strftime("%Y-%m-%d")
@@ -827,6 +928,7 @@ class SegmentMainWindow:
                 delete_df_from_redis(store_data["df_id"])
 
             df = fletch_dataset(start, end)
+            tot_revenue = df.dt.sum() - df.cr.sum()
 
             df_id = save_df_to_redis(df, expire_seconds=1200)
 
@@ -834,6 +936,7 @@ class SegmentMainWindow:
                 "df_id": df_id,
                 "start": start,
                 "end": end,
+                "tot_revenue": tot_revenue,
                 "slider_val": slider_value,
             }
 
@@ -873,32 +976,41 @@ class SegmentMainWindow:
             Input(self.tree_id, "checked"),
             # Input(self.kpi_compact_switch_id, "checked"),
             State("theme_switch", "checked"),
+            State(self.df_store_id, "data"),
             prevent_initial_call=True,
         )
-        def get_data(checked,  theme):
+        def get_data(checked,  theme, store_data):
             if not checked:
                 return  empty_placeholder(), True, True, True
 
             rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
-            md = get_items(checked)
+            
+            md = get_items(checked,store_data['start'],store_data['end'])
+
+            agent_summary = fletch_agents(checked, store_data['start'], store_data['end'])
+            store_summary = fletch_stores(checked, store_data['start'], store_data['end'])
+            dfa = agent_summary.copy()
+            dfa['agent_sales'] = np.where(dfa['agent_name'] != 'Без дизайнера', "Через дизайнера", dfa['agent_name'])
+            dfa = dfa.pivot_table(index='agent_sales', values='amount', aggfunc='sum').reset_index()
+            agent_share = dfa[dfa['agent_sales'] == 'Через дизайнера']['amount'].sum() / dfa['amount'].sum() * 100 if dfa['amount'].sum() > 0 else 0.0
 
     
             # kpi = build_kpi(md, compact=bool(compact_on))
 
             details = dmc.Stack(
                 [
-                    insights_block(md),
-                    pareto_block(md),              # хочешь — убери/оставь
+                    insights_block(md, store_data['tot_revenue'],agent_share),
+                    pareto_block(md),    
+                    stores_block(store_summary),
                     self.update_ag(md, rrgrid_className),
+                   
+                    
                 ],
                 gap="md",
             )
 
             return  details, False, False, False
 
-
-            
-        
         #Вызываем управление категорями
         @app.callback(
             Output(CATS_MANAGEMENT.drawer_id,'opened'),
@@ -910,5 +1022,32 @@ class SegmentMainWindow:
         def update_cats(nclicks,ids):
             return True, CATS_MANAGEMENT.update_drawer(ids)
                 
+        @app.callback(
+            Output({'type':ag_modal,'index':MATCH},'opened'),
+            Output({'type':model_container,'index':MATCH},'children'),
+            Input({'type':ag_grid,'index':MATCH},'selectedRows'),
+            State(self.df_store_id, "data"),
+            prevent_initial_call=True,            
+        )
+        def open_modal(double_click_data, store_data):
+            start = store_data['start']
+            end = store_data['end']
+            
+            if double_click_data:
+                
+                d = double_click_data[0]
+                return True, AG_MODAL.update_modal(d, start, end)
+            
+            return no_update, no_update
+            
+            
+            
+        
+        
+        
+        
+        
         CATS_MANAGEMENT.register_callbacks(app)
+        AG_MODAL.register_callbacks(app)
+        
         
