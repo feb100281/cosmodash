@@ -4,6 +4,12 @@ from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 import dash_ag_grid as dag
 
+from dash import dcc
+import plotly.express as px
+import plotly.graph_objects as go
+
+from typing import Optional
+
 
 
 from data import (
@@ -36,6 +42,46 @@ COLS = [
     "amount",
     "quant",
 ]
+
+def title_badge(text: str):
+    return dmc.Badge(
+        text,
+        color="blue",
+        size="lg",
+        radius="sm",
+        # variant="gradient",
+        # gradient={"from": "blue", "to": "grape", "deg": 45},
+        style={"fontWeight": 600, "letterSpacing": "0.2px"}
+    )
+    
+
+
+def kpi_card(label: str, value: str, icon: str = "mdi:chart-line"):
+    return dmc.Paper(
+        withBorder=True,
+        radius="md",
+        shadow="sm",
+        p="md",
+        style={
+            "borderColor": "rgba(99,102,241,0.35)",  # оттенок grape
+        },
+        children=dmc.Group(
+            align="center",
+            gap="sm",
+            children=[
+                dmc.ThemeIcon(
+                    size="lg", radius="md", variant="light", color="blue",
+                    children=DashIconify(icon=icon, width=20)
+                ),
+                dmc.Stack(gap=2, children=[
+                    dmc.Text(value, size="xl", fw=700, style={"lineHeight": 1}),
+                    dmc.Text(label, size="sm", opacity=0.7),
+                ])
+            ]
+        )
+    )
+
+
 
 
 def id_to_months(start, end):
@@ -111,66 +157,7 @@ def fmt_compact(v: float, money=False, digits=2):
     out = f"{num}{NBSP_THIN}{_UNITS[k]}".strip()
     return f"{out}{NBSP_THIN}₽" if money else out
 
-def _nb_fmt(v: float, money=False):
-    try: v = float(v)
-    except: v = 0.0
-    s = f"{v:,.0f}" if abs(v) >= 100 else f"{v:,.2f}"
-    s = s.replace(",", " ").replace(" ", NBSP_THIN)
-    return f"{s}{NBSP_THIN}₽" if money else s
 
-def kpi_card(label: str, value: str, icon: str, color="blue"):
-    return dmc.Paper(
-        withBorder=True, radius=0, p="md",
-        style={
-            "minWidth": 220,              # чтобы карточки не сжимались
-            "minHeight": 112,
-            "display": "flex",
-            "flexDirection": "column",
-            "justifyContent": "space-between",
-        },
-        children=[
-            dmc.Group(align="center", gap="xs", children=[
-                dmc.ThemeIcon(DashIconify(icon=icon, width=18),
-                              variant="light", color=color, size=32, radius="xl"),
-                dmc.Text(label, c="dimmed", size="sm"),
-            ]),
-            dmc.Text(
-                value, fw=800,
-                style={
-                    "fontSize": "clamp(20px, 3.2vw, 28px)",   # адаптивно
-                    "whiteSpace": "nowrap",
-                    "fontVariantNumeric": "tabular-nums",
-                },
-            ),
-        ],
-    )
-
-def build_kpi(df: pd.DataFrame, compact: bool = True):
-    dt  = pd.to_numeric(df.get("dt"),       errors="coerce").fillna(0).sum()
-    cr  = pd.to_numeric(df.get("cr"),       errors="coerce").fillna(0).sum()
-    qdt = pd.to_numeric(df.get("quant_dt"), errors="coerce").fillna(0).sum()
-    qcr = pd.to_numeric(df.get("quant_cr"), errors="coerce").fillna(0).sum()
-    n_items   = df.get("fullname", pd.Series(dtype="object")).nunique()
-    amount    = dt - cr
-    quant_net = qdt - qcr
-    ret_coef  = (cr / dt * 100) if dt > 0 else 0.0
-    avg_price = (amount / quant_net) if quant_net > 0 else 0.0
-
-    F = (lambda x, money=False: fmt_compact(x, money)) if compact else (lambda x, money=False: fmt_grouped(x, money))
-
-    row = dmc.Group(
-        gap="md", wrap="nowrap",
-        style={"overflowX": "auto", "paddingBottom": 4},
-        children=[
-            kpi_card("Номенклатур",        f"{int(n_items)}",                   "mdi:format-list-bulleted"),
-            kpi_card("Продажи",       F(dt, money=True),                   "mdi:cash-multiple",     "green"),
-            kpi_card("Возвраты",      F(cr, money=True),                   "mdi:cash-refund",       "red"),
-            kpi_card("Чистая выручка",     F(amount, money=True),               "mdi:chart-line-variant","grape"),
-            kpi_card("Коэф. возвратов",    f"{ret_coef:.2f}%".replace(".", ","),"mdi:percent-outline",   "orange"),
-            kpi_card("Средняя цена / ед",  F(avg_price, money=True),            "mdi:cube-outline",      "indigo"),
-        ],
-    )
-    return row
 
 def pareto_block(df: pd.DataFrame):
     # агрегируем по номенклатуре
@@ -191,14 +178,14 @@ def pareto_block(df: pd.DataFrame):
         dmc.BarChart(
             h=320, data=data, dataKey="fullname",
             series=[{"name": "amount", "label": "Выручка"}],
-            # valueFormatter={"function":"RUB"},
+            valueFormatter = {"function": "formatNumberIntl"},
             withLegend=False,
             gridAxis="xy",
-            # добавим линию доли как вторую ось (если в твоей версии MantineCharts есть mixed chart)
-            # если нет поддержки линии — можно вывести вторым AreaChart отдельно
+
+
         ),
         dmc.Space(h=6),
-        dmc.Progress(value=float(top["cum_share"].iloc[-1] if not top.empty else 0), size="sm", striped=True, radius="xs"),
+        dmc.Progress(value=float(top["cum_share"].iloc[-1] if not top.empty else 0), size="lg", striped=True, radius="xs"),
     ])
 
 # Блок по магазинам/менеджерам
@@ -276,202 +263,384 @@ def stores_block(df_stores: pd.DataFrame):
        
     )
 
-def insights_block(df: pd.DataFrame, tot_revenue: float, agent_share: float):
+
+
+
+
+
+def insights_block(
+    df: pd.DataFrame,
+    tot_revenue: float,
+    agent_share: float,
+    selected_category: Optional[str] = None,
+    yaxis_max: Optional[float] = None,
+):
     d = df.copy()
 
-    # числовые столбцы -> float
-    for c in ["dt","cr","quant_dt","quant_cr"]:
-        d[c] = pd.to_numeric(d.get(c), errors="coerce").fillna(0)
+    # ============== Утилиты ==============
+    def clamp(x: float) -> float:
+        try:
+            x = float(x)
+        except Exception:
+            x = 0.0
+        return max(0.0, min(100.0, x))
 
-    d["amount"]  = d["dt"] - d["cr"]
-    d['tot_revenue'] = tot_revenue
-    d['revenue_pct'] = (d['amount'] / d['tot_revenue'] * 100).fillna(0)
-    d["quant"]   = d["quant_dt"] - d["quant_cr"]
+    def fmt_pct(x, digits=1):
+        try:
+            s = f"{float(x):.{digits}f}%"
+        except Exception:
+            s = f"{0:.{digits}f}%"
+        return s.replace(".", ",")
+
+    def fmt_compact(x, money=False, digits=1):
+        try:
+            x = float(x)
+        except Exception:
+            x = 0.0
+        absx = abs(x)
+        suffix = ""
+        val = x
+        if absx >= 1_000_000_000:
+            val = x / 1_000_000_000
+            suffix = " млрд"
+        elif absx >= 1_000_000:
+            val = x / 1_000_000
+            suffix = " млн"
+        elif absx >= 1_000:
+            val = x / 1_000
+            suffix = " тыс"
+        s = f"{val:.{digits}f}".replace(".", ",") + suffix
+        if money:
+            s += " ₽"
+        return s
+
+    def section_card(title: str, children):
+        return dmc.Paper(withBorder=True, radius="md", p="md", children=[
+            dmc.Text(title, fw=600, mb=8),
+            children,
+        ])
+
+    def kpi_stat(label: str, value, hint: str = ""):
+        return dmc.Paper(withBorder=True, radius="md", p="sm", children=[
+            dmc.Text(label, size="xs", c="dimmed"),
+            dmc.Text(value, fw=700, fz="lg"),
+            (dmc.Text(hint, size="xs", c="dimmed") if hint else dmc.Box()),
+        ])
+
+    def find_col(cands):
+        lc = {c.lower(): c for c in d.columns}
+        for name in cands:
+            if name.lower() in lc:
+                return lc[name.lower()]
+        return None
+
+    # красивый потолок оси Y (ступени 1–2–5)
+    def nice_ceil(v: float, pad_ratio: float = 0.15) -> float:
+        v = float(v or 0) * (1 + pad_ratio)
+        if v <= 0:
+            return 1.0
+        mag = 10 ** int(np.floor(np.log10(v)))
+        base = np.ceil(v / mag)
+        step = 1 if base <= 1 else (2 if base <= 2 else (5 if base <= 5 else 10))
+        return float(step * mag)
+
+    # ============== Приведение чисел ==============
+    for c in ["dt", "cr", "quant_dt", "quant_cr"]:
+        if c in d.columns:
+            d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0.0)
+        else:
+            d[c] = 0.0
+
+    d["amount"] = d["dt"] - d["cr"]
+    d["quant"]  = d["quant_dt"] - d["quant_cr"]
     d["ret_pct"] = (d["cr"] / d["dt"].replace(0, pd.NA)).fillna(0) * 100
 
-    # размеры витрины
-    n_items = d["fullname"].nunique()
-    n_brand = d["brend"].nunique() if "brend" in d.columns else 0
-    n_manu  = d["manu"].nunique()  if "manu"  in d.columns else 0
+    # ============== Имена колонок (расширенно) ==============
+    date_col  = find_col(["date", "eom", "doc_date", "operation_date", "sale_date", "init_date", "дата", "Дата"])
+    agent_col = find_col(["agent_name"])
+    store_col = find_col(["store_gr_name"])
+    cat_col   = find_col(["category", "category_name", "Категория", "Группа", "group_name"])
+    brand_col = find_col(["brend", "brand", "бренд"])
+    manu_col  = find_col(["manu", "manufacturer", "производитель"])
+    full_col  = find_col(["fullname", "sku", "наименование"])
+
+    # Фильтр по категории
+    if selected_category and (cat_col is not None) and (cat_col in d.columns):
+        d = d.loc[d[cat_col].astype(str) == str(selected_category)].copy()
+
+    # ============== Сводные числа ==============
+    n_items = int(d[full_col].nunique()) if full_col in d.columns else 0
+    n_brand = int(d[brand_col].nunique()) if brand_col in d.columns else 0
+    n_manu  = int(d[manu_col].nunique())  if manu_col  in d.columns else 0
 
     total_dt = float(d["dt"].sum())
     total_cr = float(d["cr"].sum())
     amount   = float(d["amount"].sum())
-    revenue_pct = round(float(d["revenue_pct"].sum()), 2)
     q_net    = float(d["quant"].sum())
-    avg_price = amount / q_net if q_net > 0 else 0.0
-    ret_coef  = (total_cr / total_dt * 100) if total_dt > 0 else 0.0
 
-    # помощник для поиска колонок с альтернативными названиями
-    def find_col(cands):
-        lc = {c.lower(): c for c in d.columns}
-        for name in cands:
-            if name in lc: return lc[name]
-        return None
+    avg_price_net = (amount / q_net) if q_net > 0 else 0.0
 
-    agent_col = find_col(["agent_name"])
-    store_col = find_col(["store","store_name","shop","store_gr_name","magazin"])
+    revenue_pct = clamp((amount / tot_revenue * 100) if tot_revenue else 0.0)
+    ret_coef    = clamp((total_cr / total_dt * 100) if total_dt else 0.0)
+    agent_share = clamp(agent_share or 0.0)
 
-    # доля «дизайнера», если есть
+    # Доля «дизайнера»
     designer_share = None
-    if agent_col is not None:
+    if agent_col is not None and "dt" in d.columns:
         s = d[agent_col].astype(str)
         is_des = (s.str.contains("дизайн", case=False, na=False) |
                   s.str.fullmatch(r"\s*дизайнер\s*", case=False, na=False))
         dt_des = float(d.loc[is_des, "dt"].sum())
-        designer_share = (dt_des / total_dt * 100) if total_dt > 0 else 0.0
+        designer_share = clamp((dt_des / total_dt * 100) if total_dt > 0 else 0.0)
 
-    # ——— Тексты разделов ———
+    # ============== Парето ==============
+    by_fullname_amt = (d.groupby(full_col, as_index=False)["amount"].sum()) if full_col in d.columns else pd.DataFrame(columns=[full_col,"amount"])
+    pareto_text = dmc.Text("нет данных", size="sm", c="dimmed")
+    pareto_widget = dmc.Box()
+    if amount > 0 and n_items > 0 and not by_fullname_amt.empty:
+        g = by_fullname_amt.sort_values("amount", ascending=False).reset_index(drop=True)
+        total_amt = max(1e-9, g["amount"].sum())
+        g["cum_share"] = g["amount"].cumsum() / total_amt * 100
+        k80 = int((g["cum_share"] >= 80).idxmax()) + 1 if not g.empty else 0
+        k80 = min(k80, n_items)
+        share_of_cat = (k80 / n_items * 100) if n_items else 0
+        current_cum = float(g["cum_share"].iloc[k80-1]) if k80 > 0 else 0.0
 
-    # 1) сводка + два колечка
-    summary = dmc.Stack(gap=4, children=[
-        dmc.Text(f"Ассортимент: {n_items} номенклатур, {n_brand} брендов, {n_manu} производителей."),
-        dmc.Text(f"Средняя цена: {fmt_compact(avg_price, money=True)}; выручка: {fmt_compact(amount, money=True)}."),
-        dmc.Group(gap="lg", wrap="wrap", children=[
-            dmc.Stack(align="center", gap=0, children=[
-                dmc.RingProgress(sections=[{"value": float(revenue_pct), "color": "blue"}], size=80, thickness=10),
-                dmc.Text("Доля в выручке", size="xs", c="dimmed"),
-                dmc.Text(f"{revenue_pct:.2f}%".replace(".", ","), fw=600),
-            ]),
-            dmc.Stack(align="center", gap=0, children=[
-                dmc.RingProgress(sections=[{"value": float(ret_coef), "color": "orange"}], size=80, thickness=10),
-                dmc.Text("Коэф. возвратов", size="xs", c="dimmed"),
-                dmc.Text(f"{ret_coef:.2f}%".replace(".", ","), fw=600),
-            ]),
-            dmc.Stack(align="center", gap=0, children=[
-                dmc.RingProgress(sections=[{"value": float(agent_share), "color": "cyan"}], size=80, thickness=10),
-                dmc.Text("Доля дизайнеров", size="xs", c="dimmed"),
-                dmc.Text(f"{agent_share:.2f}%".replace(".", ","), fw=600),
-            ]),
-            
-            (dmc.Stack(align="center", gap=0, children=[
-                dmc.RingProgress(sections=[{"value": float(designer_share or 0), "color": "grape"}], size=80, thickness=10),
-                dmc.Text("Доля «дизайнера»", size="xs", c="dimmed"),
-                dmc.Text(f"{(designer_share or 0):.1f}%".replace(".", ","), fw=600),
-            ]) if designer_share is not None else dmc.Box()),
+        pareto_text = dmc.Text(
+            f"Топ-{k80} SKU (~{share_of_cat:.1f}%) формируют 80% выручки".replace(".", ","),
+            size="sm"
+        )
+        pareto_widget = dmc.Stack(gap=6, children=[
+            dmc.Progress(value=clamp(current_cum), size="md", radius="sm"),
+            dmc.Group(justify="space-between", children=[
+                dmc.Text(f"Достигнуто: {fmt_pct(current_cum)}", size="xs", c="dimmed"),
+                dmc.Badge("80%", variant="outline", radius="xs")
+            ])
+        ])
+
+    # ============== Топы ==============
+    def top_money(col, k=3):
+        if (col is None) or (col not in d.columns) or d.empty:
+            return ["нет данных"]
+        g = (d.groupby(col, as_index=False)["amount"].sum()
+               .sort_values("amount", ascending=False).head(k))
+        if g.empty:
+            return ["нет данных"]
+        return [f"{r[col]} — {fmt_compact(r['amount'], money=True)}" for _, r in g.iterrows()]
+
+    brands_list = top_money(brand_col)
+    manus_list  = top_money(manu_col)
+
+    # Лучшие SKU
+    best_amt_txt = ["нет данных"]
+    if not by_fullname_amt.empty:
+        best_amt = by_fullname_amt.sort_values("amount", ascending=False).head(5)
+        best_amt_txt = [f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in best_amt.iterrows()] or ["нет данных"]
+
+    # ============== Возвраты/качество ==============
+    def risk_color(p):
+        return "red" if p >= 30 else ("yellow" if p >= 20 else "green")
+
+    risky_list = [dmc.ListItem("нет данных")]
+    risky_count = 0
+    very_high_count = 0
+    max_ret = 0.0
+
+    if total_dt > 0:
+        min_dt = 0.01 * total_dt
+        risky_all = d.loc[
+            ((d["quant_dt"] >= 5) | (d["dt"] >= min_dt)) & (d["ret_pct"] >= 20)
+        ].copy()
+
+        if not risky_all.empty:
+            risky_count = int((risky_all["ret_pct"] >= 20).sum())
+            very_high_count = int((risky_all["ret_pct"] >= 30).sum())
+            max_ret = float(risky_all["ret_pct"].max())
+
+            risky_top = (risky_all.groupby(full_col, as_index=False)
+                        .agg(dt=("dt","sum"), cr=("cr","sum"))
+                        .assign(ret_pct=lambda x: (x["cr"] / x["dt"].replace(0, pd.NA)).fillna(0) * 100)
+                        .sort_values("ret_pct", ascending=False)
+                        .head(5))
+            risky_list = [
+                dmc.ListItem(
+                    dmc.Badge(
+                        f"{r[full_col]} — {fmt_pct(r['ret_pct'], 1)}",
+                        color=risk_color(float(r["ret_pct"])),
+                        variant="filled", radius="xs"
+                    )
+                ) for _, r in risky_top.iterrows()
+            ]
+
+    def quality_state(max_ret_val, count_20, count_30):
+        if count_20 == 0:
+            return ("green", "Возвраты в норме — критичных позиций нет.")
+        if count_30 > 0:
+            return ("red", f"Высокие возвраты: {count_30} SKU с ≥30%")
+        return ("yellow", f"Есть возвраты выше нормы: {count_20} SKU с ≥20%")
+
+    quality_color, quality_text = quality_state(max_ret, risky_count, very_high_count)
+    quality_alert = dmc.Alert(quality_text, color=quality_color, variant="light", withCloseButton=True)
+
+    # ============== Гистограмма цен (опционально) ==============
+    price_hist_card = dmc.Box()
+    if "quant_dt" in d.columns and (d["quant_dt"] > 0).any():
+        d_price = d.loc[(d["quant_dt"] > 0) & (d["dt"] > 0)].copy()
+        d_price["price_gross_unit"] = d_price["dt"] / d_price["quant_dt"]
+        d_price = d_price.replace([float("inf"), float("-inf")], pd.NA).dropna(subset=["price_gross_unit"])
+        if not d_price.empty:
+            q_lo, q_hi = d_price["price_gross_unit"].quantile([0.01, 0.99])
+            mask = d_price["price_gross_unit"].between(q_lo, q_hi, inclusive="both")
+            clipped = int((~mask).sum())
+            d_clip = d_price.loc[mask].copy()
+
+            fig_hist = px.histogram(
+                d_clip,
+                x="price_gross_unit",
+                nbins=24,
+                labels={"price_gross_unit": "Цена за единицу (Gross)"},
+            )
+            fig_hist.update_xaxes(range=[float(q_lo), float(q_hi)])
+            fig_hist.update_layout(height=220, margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified")
+            caption = dmc.Text(
+                f"Показаны 1–99 перцентили; исключено выбросов: {clipped}",
+                size="xs", c="dimmed"
+            )
+            price_hist_card = section_card(
+                "Распределение цен (Gross, за ед.)",
+                dmc.Stack(gap=6, children=[dcc.Graph(figure=fig_hist, config={"displayModeBar": False}), caption])
+            )
+
+   
+
+    # ============== KPI ==============
+    kpis_grid = dmc.SimpleGrid(
+        cols={"base": 1, "sm": 2},
+        spacing="sm",
+        children=[
+            kpi_card("Выручка (нетто)", fmt_compact(amount, money=True), icon="mdi:cash-multiple"),
+            kpi_card("Средняя цена (Net)", fmt_compact(avg_price_net, money=True), icon="mdi:currency-rub"),
+            kpi_card("Сумма возвратов", fmt_compact(total_cr, money=True), icon="mdi:cash-refund"),
+            kpi_card("Коэфф. возвратов", fmt_pct(ret_coef, 1), icon="mdi:percent"),
+        ]
+    )
+
+
+    # ============== Кольца ==============
+    rings_row = dmc.Group(gap="lg", wrap="wrap", children=[
+        dmc.Stack(align="center", gap=0, children=[
+            dmc.RingProgress(sections=[{"value": float(revenue_pct), "color": "blue"}], size=82, thickness=10),
+            dmc.Text("Доля в выручке", size="xs", c="dimmed"),
+            dmc.Text(fmt_pct(revenue_pct, 2), fw=600),
+        ]),
+        dmc.Stack(align="center", gap=0, children=[
+            dmc.RingProgress(sections=[{"value": float(ret_coef), "color": "orange"}], size=82, thickness=10),
+            dmc.Text("Коэф. возвратов", size="xs", c="dimmed"),
+            dmc.Text(fmt_pct(ret_coef, 2), fw=600),
+        ]),
+        dmc.Stack(align="center", gap=0, children=[
+            dmc.RingProgress(sections=[{"value": float(agent_share), "color": "cyan"}], size=82, thickness=10),
+            dmc.Text("Доля дизайнеров", size="xs", c="dimmed"),
+            dmc.Text(fmt_pct(agent_share, 2), fw=600),
+        ]),
+        (dmc.Stack(align="center", gap=0, children=[
+            dmc.RingProgress(sections=[{"value": float(designer_share or 0), "color": "grape"}], size=82, thickness=10),
+            dmc.Text("«Дизайнер»", size="xs", c="dimmed"),
+            dmc.Text(fmt_pct((designer_share or 0), 1), fw=600),
+        ]) if designer_share is not None else dmc.Box()),
+    ])
+
+   
+
+    # ============== SKU-аналитика ==============
+    # Лучшие SKU по количеству (как было)
+    best_qty_txt = ["нет данных"]
+    by_fullname_qty = (
+        d.groupby(full_col, as_index=False).agg(q=("quant", "sum"), a=("amount", "sum"))
+    ) if full_col in d.columns else pd.DataFrame(columns=[full_col, "q", "a"])
+    if not by_fullname_qty.empty:
+        bq = by_fullname_qty.sort_values("q", ascending=False).head(5)
+        best_qty_txt = []
+        for _, r in bq.iterrows():
+            price = (r["a"] / r["q"]) if r["q"] > 0 else 0.0
+            best_qty_txt.append(f"{r[full_col]} — {int(round(r['q']))} шт, ~{fmt_compact(price, money=True)}/ед")
+
+    # Топ SKU по выручке — фикс
+    best_amt_list = ["нет данных"]
+    if 'by_fullname_amt' in locals() and not by_fullname_amt.empty:
+        top_amt = (
+            by_fullname_amt
+            .copy()
+            .assign(amount=lambda x: pd.to_numeric(x["amount"], errors="coerce").fillna(0.0))
+            .query("amount > 0")
+            .sort_values("amount", ascending=False)   # ← вот ключевая правка
+            .head(5)
+        )
+        if not top_amt.empty:
+            best_amt_list = [f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in top_amt.iterrows()]
+
+    sku_row = dmc.SimpleGrid(
+        cols={"base": 1, "sm": 2}, spacing="md",
+        children=[
+            section_card("Лучшие SKU по выручке", dmc.List([dmc.ListItem(x) for x in best_amt_list], withPadding=True)),
+
+               
+           section_card(
+            "Лучшие SKU по выручке",
+                dmc.List(
+                    [dmc.ListItem(x) for x in best_qty_txt],
+                    withPadding=True,
+                ),
+            )
+
+        ],
+    )
+
+
+    # ============== Доп. графики ==============
+    def has_children(node) -> bool:
+        return getattr(node, "children", None) not in (None, [], ())
+
+    extras_charts = (
+        dmc.SimpleGrid(cols={"base":1, "md":2}, spacing="md",
+                       children=[price_hist_card, ])
+        if (has_children(price_hist_card) )
+        else dmc.Box()
+    )
+
+    # ============== Итоговый layout ==============
+    left_col = dmc.Stack(gap="md", children=[
+        section_card(title_badge("KPI"), kpis_grid),
+        section_card(
+            title_badge("Ассортимент"),
+            dmc.Text(
+                f"{n_items} номенклатур · {n_brand} брендов · {n_manu} производителей",
+                size="sm",
+                opacity=0.8
+            ),
+        ),
+        section_card(title_badge("Индикаторы"), rings_row),
+    ])
+
+    right_col = dmc.Stack(gap="md", children=[
+        section_card("Парето 80/20", dmc.Stack(gap=6, children=[pareto_text, pareto_widget])),
+        section_card("Рисковые SKU", dmc.Stack(gap=6, children=[quality_alert, dmc.List(risky_list, withPadding=True)])),
+        dmc.SimpleGrid(cols={"base":1, "sm":2}, spacing="md", children=[
+            section_card("Топ-бренды по выручке", dmc.List([dmc.ListItem(x) for x in brands_list], withPadding=True)),
+            section_card("Топ-производители по выручке", dmc.List([dmc.ListItem(x) for x in manus_list], withPadding=True)),
         ]),
     ])
 
-    # 2) Парето-бейдж
-    pareto_badge = dmc.Badge("—", variant="light")
-    if amount > 0 and n_items > 0:
-        g = (d.groupby("fullname", as_index=False)["amount"].sum()
-               .sort_values("amount", ascending=False).reset_index(drop=True))
-        g["cum_share"] = g["amount"].cumsum() / g["amount"].sum() * 100
-        k80 = int((g["cum_share"] >= 80).idxmax()) + 1 if not g.empty else 0
-        share_of_cat = 100 * k80 / n_items if n_items > 0 else 0
-        pareto_badge = dmc.Badge(
-            f"Топ-{k80} SKU (~{share_of_cat:.1f}%) дают 80% выручки".replace(".", ","),
-            variant="light", 	radius="xs",
-        )
+    return dmc.Stack(gap="md", children=[
+        dmc.Group(justify="space-between", align="center", children=[
+            dmc.Title("Быстрые выводы", order=4),
+            dmc.Badge("Аналитика ассортимента", variant="outline", radius="xs"),
+        ]),
+        dmc.SimpleGrid(cols={"base": 1, "md": 2}, spacing="lg", children=[left_col, right_col]),
+        sku_row,
+        extras_charts,
 
-    # 3) Топ-бренды и производители по выручке
-    def top_money(col, k=3):
-        if col not in d.columns: return ["—"]
-        g = (d.groupby(col, as_index=False)["amount"].sum()
-               .sort_values("amount", ascending=False).head(k))
-        return [f"{r[col]} — {fmt_compact(r['amount'], money=True)}" for _, r in g.iterrows()]
-
-    brands_list = top_money("brend")
-    manus_list  = top_money("manu")
-
-    # 4) Лучшие SKU по выручке
-    best_amt = (d.groupby("fullname", as_index=False)["amount"].sum()
-                  .sort_values("amount", ascending=False).head(5))
-    best_amt_txt = [f"{r['fullname']} — {fmt_compact(r['amount'], money=True)}"
-                    for _, r in best_amt.iterrows()]
-
-    # 5) Лучшие SKU по количеству + цена за 1 ед
-    best_qty = (d.groupby("fullname", as_index=False)
-                  .agg(q=("quant","sum"), a=("amount","sum"))
-                  .sort_values("q", ascending=False).head(5))
-    best_qty_txt = []
-    for _, r in best_qty.iterrows():
-        price = (r["a"]/r["q"]) if r["q"] > 0 else 0.0
-        best_qty_txt.append(f"{r['fullname']} — {int(round(r['q']))} шт, ~{fmt_compact(price, money=True)}/ед")
-
-    # 6) Новые модели за 30 дней (qty, revenue, цена/ед)
-    new_models_txt, n_new = [], 0
-    if "init_date" in d.columns:
-        d["init_date"] = pd.to_datetime(d["init_date"], errors="coerce")
-        anchor = pd.to_datetime(d["date"], errors="coerce").max() if "date" in d.columns else d["init_date"].max()
-        if pd.notna(anchor):
-            cutoff = anchor - pd.Timedelta(days=30)
-            new_df = d.loc[d["init_date"] >= cutoff]
-            n_new = new_df["fullname"].nunique()
-            if n_new > 0:
-                agg = (new_df.groupby("fullname", as_index=False)
-                             .agg(q=("quant","sum"), a=("amount","sum"))
-                             .sort_values("a", ascending=False).head(10))
-                for _, r in agg.iterrows():
-                    p = (r["a"]/r["q"]) if r["q"] > 0 else 0.0
-                    new_models_txt.append(
-                        f"{r['fullname']} — {int(round(r['q']))} шт; {fmt_compact(r['a'], money=True)}; ~{fmt_compact(p, money=True)}/ед"
-                    )
-
-    # 7) Рисковые SKU (высокий % возвратов)
-    min_q = 5
-    min_dt = 0.01 * total_dt
-    risky = d.loc[((d["quant_dt"] >= min_q) | (d["dt"] >= min_dt)) & (d["ret_pct"] >= 20)]
-    risky = (risky.groupby("fullname", as_index=False)
-                  .agg(dt=("dt","sum"), cr=("cr","sum"))
-                  .assign(ret_pct=lambda x: (x["cr"] / x["dt"].replace(0, pd.NA)).fillna(0) * 100)
-                  .sort_values("ret_pct", ascending=False)
-                  .head(5))
-    risky_txt = [f"{r['fullname']} — {r['ret_pct']:.1f}%".replace(".", ",") for _, r in risky.iterrows()]
-    if not risky_txt: risky_txt = ["—"]
-
-    # 8) Топ менеджеров/магазинов (если столбцы есть)
-    agents_txt = ["—"]
-    if agent_col is not None:
-        ag = (d.groupby(agent_col, as_index=False)["amount"].sum()
-                .sort_values("amount", ascending=False).head(3))
-        if not ag.empty:
-            agents_txt = [f"{r[agent_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in ag.iterrows()]
-
-    stores_txt = ["—"]
-    if store_col is not None:
-        st = (d.groupby(store_col, as_index=False)["amount"].sum()
-                .sort_values("amount", ascending=False).head(3))
-        if not st.empty:
-            stores_txt = [f"{r[store_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in st.iterrows()]
-
-    # ——— Верстка: одна колонка с разделителями ———
-    section = lambda title, items: dmc.Stack(gap=4, children=[
-        dmc.Text(title, fw=700),
-        dmc.List([dmc.ListItem(x) for x in items], withPadding=True),
     ])
-
-    return dmc.Card(withBorder=True, radius=0, p="md", children=[
-        dmc.Group(justify="space-between", align="center",
-                  children=[dmc.Title("Быстрые выводы", order=5),
-                            dmc.Badge("аналитика ассортимента", variant="outline", radius="xs",)]),
-        dmc.Space(h=6),
-
-        summary,
-        dmc.Space(h=6),
-        pareto_badge,
-
-        dmc.Divider(label="Топ-бренды и производители", my="md"),
-        section("Топ-бренды по выручке", brands_list),
-        section("Топ-производители по выручке", manus_list),
-
-        dmc.Divider(label="SKU-аналитика", my="md"),
-        section("Лучшие SKU по выручке", best_amt_txt if best_amt_txt else ["—"]),
-        section("Лучшие SKU по количеству", best_qty_txt if best_qty_txt else ["—"]),
-
-        dmc.Divider(label=f"Новые модели за 30 дней: {n_new}", my="md"),
-        dmc.List([dmc.ListItem(x) for x in (new_models_txt or ["—"])], withPadding=True),
-
-        dmc.Divider(label="Рисковые SKU (высокий % возвратов)", my="md"),
-        dmc.List([dmc.ListItem(x) for x in risky_txt], withPadding=True),
-
-        ((dmc.Divider(label="Менеджеры и магазины", my="md"),
-          section("Топ-менеджеры", agents_txt),
-          section("Топ-магазины",  stores_txt))
-         if (agent_col is not None or store_col is not None) else dmc.Box()),
-    ])
-
 
 
 
@@ -484,18 +653,10 @@ class SegmentMainWindow:
             "Данный раздел предоставляет аналитику по номенклатурам продукции",
             size="xs",
         )
-        # self.kpi_container_id = "segment_kpi_container"
-        # self.kpi_compact_switch_id = "segment_kpi_compact"
+
         self.search_input_id      = "segments_search_fullname"
-        # self.only_returns_id      = "segments_only_returns_switch"
-        # self.designer_share_id    = "segments_designer_share_number"   # %
-        # self.designer_enable_id   = "segments_designer_enable_switch"
-        # self.ret_threshold_id     = "segments_ret_threshold_number"    # %
-        # self.ret_enable_id        = "segments_ret_enable_switch"
-        # self.pareto_enable_id     = "segments_pareto_enable_switch"
 
 
-        # self.mslider_id = {"type":"segment_analisys_monthslider", "index":'1'}
         self.mslider_id = "segment_analisys_monthslider"
         self.tree_conteiner_id = "segment_analisys_tree_container_very_unique_id"
         self.details_conteiner_id = "segment_analisys_details_container_very_unique_id"
@@ -584,28 +745,83 @@ class SegmentMainWindow:
         df["ret_ratio"] = (df["cr"] / df["dt"].replace(0, pd.NA)).fillna(0) * 100  # ← ПО ДЕНЬГАМ!
 
         cols = [
-            {"headerName": "Номенклатура", "field": "fullname"},
-            {"headerName": "Дата инициализации", "field": "init_date",
-            "valueFormatter": {"function": "RussianDate(params.value)"}},
-            {"headerName": "Последняя продажа", "field": "last_sales_date",
-            "valueFormatter": {"function": "RussianDate(params.value)"}},
+            # ГРУППА «Номенклатура»
+            {
+                "headerName": "Номенклатура",
+                "groupId": "product",
+                "marryChildren": True,
+                "headerClass": "ag-center-header",
+                "children": [
+                    {
+                        "headerName": "Номенклатура",
+                        "field": "fullname",
+                        "minWidth": 220,
+                        "type": "leftAligned",
+                        "cellClass": "ag-firstcol-bg",
+                        "headerClass": "ag-center-header",
+                         "pinned": "left",
+                    },
+                    {
+                        "headerName": "Бренд",
+                        "field": "brend",
+                        "minWidth": 160,
+                        "type": "leftAligned",
+                        "columnGroupShow": "open",
+                        "headerClass": "ag-center-header",
+                        # опционально:
+                        # "valueGetter": {"function": "(p)=> (p.data?.brend && String(p.data.brend).trim()) || 'Бренд не указан'"}
+                    },
+                    {
+                        "headerName": "Производитель",
+                        "field": "manu",
+                        "minWidth": 160,
+                        "type": "leftAligned",
+                        "columnGroupShow": "open",
+                        "headerClass": "ag-center-header",
+                        # "valueGetter": {"function": "(p)=> (p.data?.manu && String(p.data.manu).trim()) || 'Производитель не указан'"}
+                    },
+                    {
+                        "headerName": "Артикль",
+                        "field": "article",  # <-- подставь твоё фактическое поле (сейчас у тебя пустая строка)
+                        "minWidth": 140,
+                        "type": "leftAligned",
+                        "columnGroupShow": "open",
+                        "headerClass": "ag-center-header",
+                    },
+                ],
+            },
 
-            {"headerName": "Выручка", "field": "amount",
-            "valueFormatter": {"function": "RUB(params.value)"},
-            "cellClass": "ag-firstcol-bg"},
-
-            {"headerName": "Всего продано", "field": "quant",
-            "valueFormatter": {"function": "FormatWithUnit(params.value,'ед')"}},
-
-            {"headerName": "Процент возвратов", "field": "ret_ratio",
-            "valueFormatter": {"function": "FormatWithUnit(params.value,'%')"}},
-
-            {"headerName": "Бренд", "field": "brend"},
-            {"headerName": "Производитель", "field": "manu"},
+            
+            {
+                "headerName": "Дата инициализации",
+                "field": "init_date",
+                "valueFormatter": {"function": "RussianDate(params.value)"},
+            },
+            {
+                "headerName": "Последняя продажа",
+                "field": "last_sales_date",
+                "valueFormatter": {"function": "RussianDate(params.value)"},
+            },
+            {
+                "headerName": "Выручка",
+                "field": "amount",
+                "valueFormatter": {"function": "RUB(params.value)"},
+                "cellClass": "ag-firstcol-bg",
+            },
+            {
+                "headerName": "Всего продано",
+                "field": "quant",
+                "valueFormatter": {"function": "FormatWithUnit(params.value,'ед')"},
+            },
+            {
+                "headerName": "Процент возвратов",
+                "field": "ret_ratio",
+                "valueFormatter": {"function": "FormatWithUnit(params.value,'%')"},
+            },
             {"headerName": "Дизайнеры", "field": "agent"},
-            {'headerName': "Артикль", "field": ""},
-            {'headerName':'id', 'field':'item_id', 'hide':True},
-        ]
+            {"headerName": "id", "field": "item_id", "hide": True},
+]
+
 
         return dmc.Stack(
             [
@@ -783,27 +999,16 @@ class SegmentMainWindow:
                                 debounce=350,
                             ),
 
-                            # dmc.Divider(label="Фильтры анализа", labelPosition="left"),
-                            # dmc.Stack(gap="xs", children=[
-                            #     dmc.Group(gap="sm", grow=True, align="center", children=[
-                            #         dmc.Switch(id=self.designer_enable_id, label="Доля продаж через дизайнера ≥", size="sm"),
-                            #         dmc.NumberInput(id=self.designer_share_id, value=80, min=0, max=100, step=5, rightSection=dmc.Text("%")),
-                            #     ]),
-                            #     dmc.Group(gap="sm", grow=True, align="center", children=[
-                            #         dmc.Switch(id=self.ret_enable_id, label="Процент возвратов ≥", size="sm"),
-                            #         dmc.NumberInput(id=self.ret_threshold_id, value=20, min=0, max=100, step=5, rightSection=dmc.Text("%")),
-                            #     ]),
-                            #     dmc.Switch(id=self.pareto_enable_id, label="Показать Парето по выручке", size="sm"),
-                            # ]),
+
 
                         
 
                         dmc.Divider(label="Выбор позиций", labelPosition="left"),
-                        dmc.ScrollArea(
+                        dcc.Loading(children=dmc.ScrollArea(
                             type="scroll",
                             style={"height": 420},
                             children=self.tree,
-                        ),
+                        ), type="cube",        ),
 
                         dmc.Divider(label="Действия", labelPosition="left"),
                         dmc.Flex(self.actions, justify="flex-start"),
@@ -821,7 +1026,8 @@ class SegmentMainWindow:
                 dmc.Space(h=8),
                 dcc.Loading(
                     id="segment-details-loading",
-                    type="default",
+                    # type="default",
+                    type="cube", 
                     children=dmc.Container(
                         id=self.details_conteiner_id,
                         fluid=True,
@@ -852,28 +1058,7 @@ class SegmentMainWindow:
                 ),
                 dmc.Space(h=12),
                 
-                # # --- Полоса управления KPI ---
-                # dmc.Group(
-                #     justify="space-between",
-                #     children=[
-                #         dmc.Text("Показатели (KPI)", fw=600),
-                #         dmc.Switch(
-                #             id=self.kpi_compact_switch_id,
-                #             label="Короткие числа (тыс/млн)",
-                #             checked=True,                # ← по умолчанию включено
-                #             size="sm",
-                #         ),
-                #     ],
-                # ),
-                # dmc.Space(h=6),
                 
-                # # --- KPI-полоса на всю ширину ---
-                # dmc.Paper(
-                #     withBorder=True, radius="sm", p="md",
-                #     children=dmc.Container(id=self.kpi_container_id, fluid=True),
-                # ),
-                # dmc.Space(h=12),
-
                 # --- ДВЕ КОЛОНКИ ---
                 dmc.Grid(
                     gutter="lg", align="stretch",
