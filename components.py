@@ -191,6 +191,92 @@ class InDevNotice:
         )
 
 
+
+
+
+
+
+
+
+class LoadingScreen:
+    """
+    Стендэлон-блок 'данные подгружаются'.
+    Плейсхолдер без собственного dcc.Loading.
+    """
+    def __init__(
+        self,
+        title: str = "Загрузка данных…",
+        subtitle: str = "Подождите немного, мы подтягиваем свежие данные",
+    ):
+        self.component = dmc.Container(
+            dmc.Center(
+                dmc.Stack(
+                    [
+                        dmc.Space(h=30),
+                        DashIconify(icon="line-md:loading-loop", width=90, color="gray"),
+                        dmc.Title(title, order=3, c="gray"),
+                        dmc.Text(subtitle, size="md", c="dimmed"),
+                        dmc.Space(h=12),
+                    ],
+                    gap="sm",
+                    align="center",
+                ),
+            ),
+            fluid=True,
+            px="xl",
+            style={"minHeight": "40vh"},
+        )
+
+
+
+
+class LoadingWrap:
+    """
+    Универсальная обёртка вокруг любого children.
+    Пока children грузится, показывается cube-лоадер + свой мини-экран.
+    """
+    def __init__(
+        self,
+        children,
+        title: str = "Загрузка…",
+        subtitle: str = "Подождите немного, данные подгружаются",
+        cube_color: str = None,  # можно передать цвет, если нужно
+    ):
+        loading_overlay = dmc.Center(
+            dmc.Stack(
+                [
+                    DashIconify(icon="line-md:hourglass", width=54, color="gray"),
+                    dmc.Text(title, fw=600, size="lg"),
+                    dmc.Text(subtitle, c="dimmed"),
+                ],
+                align="center",
+                gap="xs",
+            ),
+            style={"minHeight": 220},
+        )
+
+        self.component = dcc.Loading(
+            id="loading-wrap",
+            type="cube",
+            color=cube_color,   # если None — возьмёт тему
+            fullscreen=False,   # можно переключить на True для полноэкранного спиннера
+            children=html.Div(
+                children=[
+                    # Когда загрузка идёт — dcc.Loading покажет кубики + этот overlay.
+                    dmc.Paper(
+                        loading_overlay,
+                        withBorder=False,
+                        shadow="sm",
+                        radius="lg",
+                        style={"minHeight": 220},
+                    ),
+                    # Когда загрузка завершится — покажется реальный контент.
+                    html.Div(children, id="loading-wrap-content"),
+                ]
+            ),
+        )
+
+
 class NoData:
     def __init__(self):
         self.component = dmc.Container(

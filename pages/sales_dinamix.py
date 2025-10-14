@@ -34,7 +34,7 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, MonthSlider, DATES, NoData
+from components import ValuesRadioGroups, MonthSlider, DATES, NoData, LoadingScreen
 
 COLS = [
     "date",
@@ -67,18 +67,26 @@ def id_to_months(start, end):
 
 class Components:
     def __init__(self):
-
-        # Общий титул и мемо
         self.title = dmc.Title("Анализ динамики продаж", order=1, c="blue")
         self.memo = dmc.Text("Данный раздел предоставляет аналитику по динамики изменения ключевых метрик.", size="xs")
-        
+
         self.tab_store_id = 'sd_tab_store'
-        self.tab_store = dcc.Store(id=self.tab_store_id,storage_type='memory')
+        self.tab_store = dcc.Store(id=self.tab_store_id, storage_type='memory')
 
         self.tab_conteiner_id = "sd_tab_conteiner"
-        self.tab_conteiner = dmc.Container(
-            children=[NoData().component], fluid=True, id=self.tab_conteiner_id
-        )
+        # ВАЖНО: dcc.Loading снаружи, а внутри — тот самый контейнер, чей children меняется колбэком
+        self.tab_conteiner = dcc.Loading(
+                id="tabs-loader",
+                type="cube",
+                delay_show=250,
+                children=dmc.Container(
+                    id=self.tab_conteiner_id,
+                    fluid=True,
+                    children=[LoadingScreen().component],
+                ),
+            )
+
+
 
         # Общий слайдер
         self.mslider_id = "sd_monthslider"

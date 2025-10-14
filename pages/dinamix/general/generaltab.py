@@ -37,7 +37,7 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice, DownLoadMenu
+from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice, DownLoadMenu, LoadingScreen
 from data import (
     load_df_from_redis,
     load_columns_dates,
@@ -841,7 +841,8 @@ class Components:
             df: pd.DataFrame = df_data[["eom", "dt", "client_order_number"]]
             df = df.dropna()
             if df.empty:
-                return NoData().component
+                # return NoData().component
+                return LoadingScreen().component
             df_sum = (
                 df.groupby(["eom", "client_order_number"], as_index=False)["dt"].sum()
             ).reset_index()
@@ -992,7 +993,8 @@ def layout(df_id=None):
             fluid=True
         )
     except:
-        return NoData().component
+        # return NoData().component
+        return LoadingScreen().component
 
 
 def registed_callbacks(app):

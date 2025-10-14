@@ -857,126 +857,316 @@ class SegmentMainWindow:
 
         return df
 
-    def maketree(self, df_id, group):
+    # def maketree(self, df_id, group):
 
+    #     df = load_df_from_redis(df_id)
+
+    #     if group != "parent_cat":
+    #         df["parent_cat"] = df[group]
+    #         df["parent_cat_id"] = df[f"{group}_id"]
+    #         df["parent_cat"] = df["parent_cat"].fillna("Нет данных")
+    #         df["cat"] = df["cat"].fillna("Нет категории")
+    #         df["subcat"] = df["subcat"].fillna("Нет подкатегории")
+    #         df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
+    #         df["cat_id"] = df["cat_id"].fillna(10_000_000)
+    #         df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
+    #         df["item_id"] = df["item_id"].fillna(10_000_001)
+    #         df["cat_id"] = df["parent_cat_id"].astype(str) + df["cat_id"].astype(str)
+    #         df["subcat_id"] = df["cat_id"].astype(str) + df["subcat_id"].astype(str)
+
+    #     else:
+    #         df["parent_cat"] = df["parent_cat"].fillna("Нет группы")
+    #         df["cat"] = df["cat"].fillna("Нет категории")
+    #         df["subcat"] = df["subcat"].fillna("Нет подкатегории")
+    #         df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
+    #         df["cat_id"] = df["cat_id"].fillna(10_000_000)
+    #         df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
+    #         df["item_id"] = df["item_id"].fillna(10_000_001)
+
+    #     df["amount"] = df.dt - df.cr
+    #     df["quant"] = df.quant_dt - df.quant_cr
+
+    #     df = df.pivot_table(
+    #         index=[
+    #             "parent_cat_id",
+    #             "parent_cat",
+    #             "cat_id",
+    #             "cat",
+    #             "subcat_id",
+    #             "subcat",
+    #             "fullname",
+    #             "item_id",
+    #         ],
+    #         # index='fullname',
+    #         values=["amount", "quant"],
+    #         aggfunc={
+    #             "amount": "sum",
+    #             "quant": "sum",
+    #         },
+    #     ).reset_index()
+    #     df["fullname"] = df["fullname"].apply(
+    #         lambda x: x if len(x) <= 50 else x[:50] + "..."
+    #     )
+
+    #     tree = []
+
+    #     def find_or_create(lst, value, label):
+    #         """Находит или создаёт узел"""
+    #         for node in lst:
+    #             if node["value"] == str(value):
+    #                 return node
+    #         node = {
+    #             "value": str(value),
+    #             "label": str(label),
+    #             "children": [],
+    #             "_count": 0,  # внутренний счётчик
+    #         }
+    #         lst.append(node)
+    #         return node
+
+    #     for _, row in df.iterrows():
+    #         pid, pname = row["parent_cat_id"], row["parent_cat"]
+    #         cid, cname = row["cat_id"], row["cat"]
+    #         sid, sname = row["subcat_id"], row["subcat"]
+    #         fullname = (row["item_id"], row["fullname"])
+
+    #         # Преобразуем 10_000_000 обратно в None
+    #         cid = None if cid == 10_000_000 else cid
+    #         sid = None if sid == 10_000_000 else sid
+
+    #         # 1 уровень — parent
+    #         parent_node = find_or_create(tree, pid, pname)
+
+    #         # 2 уровень — cat
+    #         if cid is not None:
+    #             cat_node = find_or_create(parent_node["children"], cid, cname)
+    #         else:
+    #             cat_node = parent_node
+
+    #         # 3 уровень — subcat
+    #         if sid is not None:
+    #             subcat_node = find_or_create(cat_node["children"], sid, sname)
+    #         else:
+    #             subcat_node = cat_node
+
+    #         # 4 уровень — fullname
+    #         subcat_node["children"].append(
+    #             {"value": str(fullname[0]), "label": str(fullname[1])}
+    #         )
+
+    #         # Увеличиваем счётчики на всех уровнях
+    #         parent_node["_count"] += 1
+    #         if cat_node is not parent_node:
+    #             cat_node["_count"] += 1
+    #         if subcat_node not in (parent_node, cat_node):
+    #             subcat_node["_count"] += 1
+
+    #     # Финальный проход для добавления (N) в label
+    #     def finalize_labels(lst):
+    #         for node in lst:
+    #             count = node.get("_count", 0)
+    #             if count > 0:
+    #                 node["label"] = f"{node['label']} ({count})"
+    #             # только если есть дети
+    #             if "children" in node and node["children"]:
+    #                 finalize_labels(node["children"])
+    #             # удаляем внутренний ключ
+    #             node.pop("_count", None)
+
+    #     finalize_labels(tree)
+
+    #     return tree
+    
+    
+    def maketree(self, df_id, group, top_n=None, min_share=None):
+        """
+        top_n: показывать у каждого узла не более N самых крупных дочерних веток; остальное -> 'Прочее'
+        min_share: скрывать дочерние ветки с долей < min_share (в %) и складывать их в 'Прочее'
+        """
         df = load_df_from_redis(df_id)
 
+        # --- подготовка колонок (фикс с *_raw) ---
         if group != "parent_cat":
-            df["parent_cat"] = df[group]
+            df["parent_cat"]    = df[group]
             df["parent_cat_id"] = df[f"{group}_id"]
-            df["parent_cat"] = df["parent_cat"].fillna("Нет данных")
-            df["cat"] = df["cat"].fillna("Нет категории")
-            df["subcat"] = df["subcat"].fillna("Нет подкатегории")
-            df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
-            df["cat_id"] = df["cat_id"].fillna(10_000_000)
-            df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
-            df["item_id"] = df["item_id"].fillna(10_000_001)
-            df["cat_id"] = df["parent_cat_id"].astype(str) + df["cat_id"].astype(str)
-            df["subcat_id"] = df["cat_id"].astype(str) + df["subcat_id"].astype(str)
-
+            df["parent_cat"]    = df["parent_cat"].fillna("Нет данных")
         else:
             df["parent_cat"] = df["parent_cat"].fillna("Нет группы")
-            df["cat"] = df["cat"].fillna("Нет категории")
-            df["subcat"] = df["subcat"].fillna("Нет подкатегории")
-            df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
-            df["cat_id"] = df["cat_id"].fillna(10_000_000)
-            df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
-            df["item_id"] = df["item_id"].fillna(10_000_001)
 
+        for col, fillv in [
+            ("cat", "Нет категории"), ("subcat", "Нет подкатегории")
+        ]:
+            df[col] = df[col].fillna(fillv)
+
+        df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
+        df["cat_id_raw"]    = df["cat_id"].fillna(10_000_000)
+        df["subcat_id_raw"] = df["subcat_id"].fillna(10_000_000)
+        df["item_id"]       = df["item_id"].fillna(10_000_001)
+
+        # склейки для стабильного value
+        df["cat_id"]    = df["parent_cat_id"].astype(str) + df["cat_id_raw"].astype(str)
+        df["subcat_id"] = df["cat_id"] + df["subcat_id_raw"].astype(str)
+
+        # --- метрики ---
         df["amount"] = df.dt - df.cr
-        df["quant"] = df.quant_dt - df.quant_cr
+        df["quant"]  = df.quant_dt - df.quant_cr
 
         df = df.pivot_table(
             index=[
-                "parent_cat_id",
-                "parent_cat",
-                "cat_id",
-                "cat",
-                "subcat_id",
-                "subcat",
-                "fullname",
-                "item_id",
+                "parent_cat_id","parent_cat",
+                "cat_id","cat","cat_id_raw",
+                "subcat_id","subcat","subcat_id_raw",
+                "fullname","item_id",
             ],
-            # index='fullname',
-            values=["amount", "quant"],
-            aggfunc={
-                "amount": "sum",
-                "quant": "sum",
-            },
+            values=["amount","quant"],
+            aggfunc={"amount":"sum","quant":"sum"}
         ).reset_index()
-        df["fullname"] = df["fullname"].apply(
-            lambda x: x if len(x) <= 50 else x[:50] + "..."
-        )
+
+        df["fullname"] = df["fullname"].apply(lambda x: x if len(x) <= 50 else x[:50]+"…")
+
+        # --- helpers ---
+        def fmt_money(x):
+            ax = abs(x)
+            if ax >= 1_000_000_000: return f"{x/1_000_000_000:.1f}млрд"
+            if ax >= 1_000_000:     return f"{x/1_000_000:.1f}м"
+            if ax >= 1_000:         return f"{x/1_000:.0f}к"
+            return f"{x:,.0f}".replace(","," ")
 
         tree = []
 
         def find_or_create(lst, value, label):
-            """Находит или создаёт узел"""
+            for n in lst:
+                if n["value"] == str(value): return n
+            n = {"value": str(value), "label": str(label), "children": [],
+                "_count":0, "_amount":0.0}
+            lst.append(n)
+            return n
+
+        # --- построение ---
+        for _, r in df.iterrows():
+            pid, pname = r["parent_cat_id"], r["parent_cat"]
+            cid_val, cname = r["cat_id"], r["cat"]
+            sid_val, sname = r["subcat_id"], r["subcat"]
+            cid_raw, sid_raw = r["cat_id_raw"], r["subcat_id_raw"]
+            item_id, fname = r["item_id"], r["fullname"]
+            amt = float(r["amount"])
+
+            parent = find_or_create(tree, pid, pname)
+            cat    = parent if cid_raw == 10_000_000 else find_or_create(parent["children"], cid_val, cname)
+            subcat = cat    if sid_raw == 10_000_000 else find_or_create(cat["children"],    sid_val, sname)
+
+            subcat["children"].append({"value": str(item_id), "label": str(fname)})
+
+            # аккумулируем только по листьям (item_id уникален -> счётчик = уникальные SKU)
+            for n in (parent, ) + (() if cat is parent else (cat,)) + (() if subcat in (parent,cat) else (subcat,)):
+                n["_count"]  += 1
+                n["_amount"] += amt
+
+        # --- сортировка и агрегация "Прочее" ---
+        def split_top_rest(children, parent_amount):
+            """возвращает (top_children, rest_amount, rest_count)"""
+            # интересуют только поддеревья (не листья)
+            subs = [c for c in children if isinstance(c, dict) and "children" in c]
+            subs.sort(key=lambda n: n.get("_amount",0.0), reverse=True)
+
+            if top_n is None and min_share is None:
+                return subs, 0.0, 0
+
+            keep = []
+            rest_amt = 0.0
+            rest_cnt = 0
+            for i, n in enumerate(subs):
+                share = (n.get("_amount",0.0) / parent_amount * 100) if parent_amount else 0.0
+                cond_top  = (top_n is not None and i < top_n)
+                cond_share = (min_share is not None and share >= min_share)
+                if (top_n is None and cond_share) or (min_share is None and cond_top) or (cond_top and cond_share):
+                    keep.append(n)
+                else:
+                    rest_amt += n.get("_amount",0.0)
+                    rest_cnt += n.get("_count",0)
+            return keep, rest_amt, rest_cnt
+
+        def apply_top_rest(node):
+            if not node.get("children"): return
+            # разделим поддеревья и листья
+            subs  = [c for c in node["children"] if isinstance(c, dict) and "children" in c]
+            leaves = [c for c in node["children"] if not ("children" in c and isinstance(c["children"], list))]
+
+            top_subs, rest_amt, rest_cnt = split_top_rest(subs, node.get("_amount",0.0))
+
+            # рекурсивно вниз
+            for s in top_subs:
+                apply_top_rest(s)
+
+            # собираем обратно
+            node["children"] = top_subs + leaves
+
+            # добавим "Прочее", если что-то отрезали
+            if (rest_amt > 0) or (rest_cnt > 0):
+                node["children"].append({
+                    "value": f"{node['value']}-others",
+                    "label": f"Прочее ({rest_cnt} • ₽{fmt_money(rest_amt)})",
+                    "children": []  # лист-агрегатор
+                })
+
+        for n in tree:
+            apply_top_rest(n)
+
+        # --- финальные подписи (коротко: ₽сумма • N • % ) ---
+        total_amount = sum(n.get("_amount",0.0) for n in tree) or None
+
+        def finalize(lst, parent_amount):
             for node in lst:
-                if node["value"] == str(value):
-                    return node
-            node = {
-                "value": str(value),
-                "label": str(label),
-                "children": [],
-                "_count": 0,  # внутренний счётчик
-            }
-            lst.append(node)
-            return node
+                amt = node.get("_amount",0.0)
+                cnt = node.get("_count",0)
+                parts = [f"₽{fmt_money(amt)}"]
+                if cnt: parts.append(f"{cnt}")
+                if parent_amount:
+                    parts.append(f"{(amt/parent_amount*100):.0f}%")
+                node["label"] = f"{node['label']} ({' • '.join(parts)})"
 
-        for _, row in df.iterrows():
-            pid, pname = row["parent_cat_id"], row["parent_cat"]
-            cid, cname = row["cat_id"], row["cat"]
-            sid, sname = row["subcat_id"], row["subcat"]
-            fullname = (row["item_id"], row["fullname"])
+                if node.get("children"):
+                    # только для поддеревьев
+                    subs = [c for c in node["children"] if isinstance(c, dict) and "children" in c]
+                    finalize(subs, amt if amt else None)
 
-            # Преобразуем 10_000_000 обратно в None
-            cid = None if cid == 10_000_000 else cid
-            sid = None if sid == 10_000_000 else sid
+                for k in ("_count","_amount"):
+                    node.pop(k, None)
+        
+        
+        # def finalize(lst, parent_amount):
+        #     for node in lst:
+        #         amt = float(node.get("_amount", 0.0))
+        #         cnt = int(node.get("_count", 0))
 
-            # 1 уровень — parent
-            parent_node = find_or_create(tree, pid, pname)
+        #         # формируем подпись: "Название (₽1.2м • 5)"
+        #         parts = [f"₽{fmt_money(amt)}"]
+        #         if cnt:
+        #             parts.append(str(cnt))
 
-            # 2 уровень — cat
-            if cid is not None:
-                cat_node = find_or_create(parent_node["children"], cid, cname)
-            else:
-                cat_node = parent_node
+        #         node["label"] = f"{node['label']} ({' • '.join(parts)})"
 
-            # 3 уровень — subcat
-            if sid is not None:
-                subcat_node = find_or_create(cat_node["children"], sid, sname)
-            else:
-                subcat_node = cat_node
+        #         # рекурсия по поддеревьям
+        #         if node.get("children"):
+        #             subs = [
+        #                 c for c in node["children"]
+        #                 if isinstance(c, dict) and "children" in c
+        #             ]
+        #             finalize(subs, amt if amt else None)
 
-            # 4 уровень — fullname
-            subcat_node["children"].append(
-                {"value": str(fullname[0]), "label": str(fullname[1])}
-            )
+        #         # удаляем служебные поля
+        #         for k in ("_count", "_amount"):
+        #             node.pop(k, None)
 
-            # Увеличиваем счётчики на всех уровнях
-            parent_node["_count"] += 1
-            if cat_node is not parent_node:
-                cat_node["_count"] += 1
-            if subcat_node not in (parent_node, cat_node):
-                subcat_node["_count"] += 1
 
-        # Финальный проход для добавления (N) в label
-        def finalize_labels(lst):
-            for node in lst:
-                count = node.get("_count", 0)
-                if count > 0:
-                    node["label"] = f"{node['label']} ({count})"
-                # только если есть дети
-                if "children" in node and node["children"]:
-                    finalize_labels(node["children"])
-                # удаляем внутренний ключ
-                node.pop("_count", None)
-
-        finalize_labels(tree)
-
+        finalize(tree, total_amount)
         return tree
+    
 
+    
+    
+    
+    
     
     
     def layout(self):
@@ -1063,8 +1253,11 @@ class SegmentMainWindow:
                 dmc.Grid(
                     gutter="lg", align="stretch",
                     children=[
-                        dmc.GridCol(sidebar, span={"base": 12, "md": 5, "lg": 4, "xl": 3}),
-                        dmc.GridCol(right_panel, span={"base": 12, "md": 7, "lg": 8, "xl": 9}),
+                        # dmc.GridCol(sidebar, span={"base": 12, "md": 6, "lg": 5, "xl": 4}),
+                        # dmc.GridCol(right_panel, span={"base": 12, "md": 6, "lg": 7, "xl": 8}),
+                        dmc.GridCol(sidebar, span=4),
+                        dmc.GridCol(right_panel, span=8),
+                        
                     ],
                 ),
 
