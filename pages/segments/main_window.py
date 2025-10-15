@@ -357,12 +357,174 @@ def insights_block(
 
     # ============== Имена колонок (расширенно) ==============
     date_col  = find_col(["date", "eom", "doc_date", "operation_date", "sale_date", "init_date", "дата", "Дата"])
+    init_col  = find_col(["init_date",])
     agent_col = find_col(["agent_name"])
     store_col = find_col(["store_gr_name"])
     cat_col   = find_col(["category", "category_name", "Категория", "Группа", "group_name"])
     brand_col = find_col(["brend", "brand", "бренд"])
     manu_col  = find_col(["manu", "manufacturer", "производитель"])
     full_col  = find_col(["fullname", "sku", "наименование"])
+    
+    # приведение к датам (без падений)
+    if date_col is not None and date_col in d.columns:
+        d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
+    if init_col is not None and init_col in d.columns:
+        d[init_col] = pd.to_datetime(d[init_col], errors="coerce")
+        
+    # ============== Новые номенклатуры (30 дней) ==============
+    # new_block = dmc.Box()  # пусто по умолчанию
+    # new_items_cnt = 0
+    # new_amount_sum = 0.0
+    # new_list_text = ["нет данных"]
+
+    # if (init_col is not None and init_col in d.columns and
+    #     date_col is not None and date_col in d.columns and
+    #     full_col is not None and full_col in d.columns and
+    #     not d.empty):
+
+    #     max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
+    #     if pd.notna(max_sel_date):
+    #         window_start = max_sel_date - pd.Timedelta(days=30)
+    #         new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
+    #         d_new = d.loc[new_mask].copy()
+
+    #         if not d_new.empty:
+    #             # агрегаты
+    #             new_items_cnt = int(d_new[full_col].nunique())
+    #             new_amount_sum = float(d_new["amount"].sum())
+
+    #             # топ-5 новых SKU по выручке
+    #             g_new = (d_new.groupby(full_col, as_index=False)["amount"].sum()
+    #                         .sort_values("amount", ascending=False).head(5))
+    #             if not g_new.empty:
+    #                 new_list_text = [
+    #                     f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}"
+    #                     for _, r in g_new.iterrows()
+    #                 ]
+
+    #             # карточка секции
+    #             new_block = section_card(
+    #                 "Новые номенклатуры (за 30 дней)",
+    #                 dmc.Stack(gap=6, children=[
+    #                     dmc.Text(
+    #                         f"{new_items_cnt} новых SKU · выручка {fmt_compact(new_amount_sum, money=True)}",
+    #                         size="sm", c="dimmed"
+    #                     ),
+    #                     dmc.List([dmc.ListItem(x) for x in new_list_text], withPadding=True, size="sm"),
+    #                 ])
+    #             )
+    
+    
+    # ============== Новые номенклатуры (30 дней) ==============
+    new_block = dmc.Box()
+    new_items_cnt = 0
+    new_amount_sum = 0.0
+
+    if (init_col is not None and init_col in d.columns and
+        date_col is not None and date_col in d.columns and
+        full_col is not None and full_col in d.columns and
+        not d.empty):
+
+        # приведение к датам (на всякий)
+        d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
+        d[init_col] = pd.to_datetime(d[init_col], errors="coerce")
+
+        max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
+        if pd.notna(max_sel_date):
+            window_start = max_sel_date - pd.Timedelta(days=30)
+            new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
+            d_new = d.loc[new_mask].copy()
+
+            if not d_new.empty:
+                # агрегаты
+                new_items_cnt  = int(d_new[full_col].nunique())
+                new_amount_sum = float(d_new["amount"].sum())
+
+                # все новые SKU: сумма выручки и количества
+                g_new = (d_new.groupby(full_col, as_index=False)
+                            .agg(amount=("amount", "sum"),
+                                    quant =("quant",  "sum"))
+                            .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
+                            .sort_values("amount", ascending=False))
+
+                # формируем элементы: ДВЕ строки
+                def item_two_lines(i, name, q, a, p):
+                    top = dmc.Text(
+                        f"{i}. {name}",
+                        size="sm",
+                        lineClamp=1,
+                        style={"minWidth": 0}
+                    )
+                    q_txt = f"{int(round(q))} шт" if pd.notna(q) else "— шт"
+                    a_txt = fmt_compact(a, money=True)
+                    p_txt = f"~{fmt_compact(p, money=True)}/ед" if pd.notna(p) and p > 0 else "~—/ед"
+                    bottom = dmc.Text(
+                        f"Продано: {q_txt} · {a_txt} · {p_txt}",
+                        size="xs",
+                        c="dimmed",
+                        style={"fontStyle": "italic"},
+                    )
+                    return dmc.ListItem(dmc.Stack(gap=2, children=[top, bottom]))
+
+                new_items = [
+                    item_two_lines(i, getattr(r, full_col), float(r.quant), float(r.amount),
+                                (float(r.price) if pd.notna(r.price) else None))
+                    for i, r in enumerate(g_new.itertuples(index=False), start=1)
+                ]
+
+                # шапка карточки
+                header_row = dmc.Group(
+                    justify="space-between",
+                    align="center",
+                    children=[
+                        dmc.Group(gap="xs", align="center", children=[
+                            dmc.Badge(f"{new_items_cnt} новых SKU", variant="light", color="teal", radius="sm"),
+                            dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}",
+                                    variant="outline", color="blue", radius="sm"),
+                        ]),
+                        dmc.Text(
+                            f"{window_start.date().strftime('%d.%m.%Y')} — {max_sel_date.date().strftime('%d.%m.%Y')}",
+                            size="xs", c="dimmed"
+                        ),
+                    ]
+                )
+
+                # карточка с вертикальным скроллом
+                new_block = section_card(
+                    "Новые номенклатуры (за 30 дней)",
+                    dmc.Stack(
+                        gap=6,
+                        children=[
+                            header_row,
+                            dmc.ScrollArea(
+                                type="auto",
+                                scrollbarSize=8,
+                                h=260,  # фиксируем высоту видимой области
+                                styles={"viewport": {"overflowX": "hidden"}},
+                                children=dmc.List(
+                                    new_items,
+                                    withPadding=True,
+                                    size="sm",
+                                    spacing="xs",
+                                ),
+                            ),
+                        ],
+                    ),
+                )
+            else:
+                new_block = section_card(
+                    "Новые номенклатуры (за 30 дней)",
+                    dmc.Alert("За выбранный период новых SKU не появилось.", color="gray", variant="light", radius="sm")
+                )
+    else:
+        new_block = section_card(
+            "Новые номенклатуры (за 30 дней)",
+            dmc.Alert("Колонка init_date не найдена — невозможно определить новые SKU.", color="gray", variant="light", radius="sm")
+        )
+
+
+
+
 
     # Фильтр по категории
     if selected_category and (cat_col is not None) and (cat_col in d.columns):
@@ -623,11 +785,12 @@ def insights_block(
     ])
 
     right_col = dmc.Stack(gap="md", children=[
+        new_block,  # 👈 добавили сюда
         section_card("Парето 80/20", dmc.Stack(gap=6, children=[pareto_text, pareto_widget])),
         section_card("Рисковые SKU", dmc.Stack(gap=6, children=[quality_alert, dmc.List(risky_list, withPadding=True)])),
         dmc.SimpleGrid(cols={"base":1, "sm":2}, spacing="md", children=[
-            section_card("Топ-бренды по выручке", dmc.List([dmc.ListItem(x) for x in brands_list], withPadding=True)),
-            section_card("Топ-производители по выручке", dmc.List([dmc.ListItem(x) for x in manus_list], withPadding=True)),
+            section_card("Топ-бренды по выручке", dmc.List([dmc.ListItem(x) for x in brands_list], withPadding=True, size="sm")),
+            section_card("Топ-производители по выручке", dmc.List([dmc.ListItem(x) for x in manus_list], withPadding=True, size="sm")),
         ]),
     ])
 
@@ -1117,21 +1280,28 @@ class SegmentMainWindow:
 
         def finalize(lst, parent_amount):
             for node in lst:
-                amt = node.get("_amount",0.0)
-                cnt = node.get("_count",0)
-                parts = [f"₽{fmt_money(amt)}"]
-                if cnt: parts.append(f"{cnt}")
-                if parent_amount:
-                    parts.append(f"{(amt/parent_amount*100):.0f}%")
+                amt = float(node.get("_amount", 0.0))
+                cnt = int(node.get("_count", 0))
+
+                parts = []
+                if cnt:
+                    parts.append(str(cnt))                      # 1) количество
+                parts.append(f"₽{fmt_money(amt)}")             # 2) выручка
+                if parent_amount:                               # 3) доля, если есть родитель
+                    share = int(round(amt / parent_amount * 100))
+                    parts.append(f"{share}%")
+
                 node["label"] = f"{node['label']} ({' • '.join(parts)})"
 
+                # рекурсия по поддеревьям
                 if node.get("children"):
-                    # только для поддеревьев
                     subs = [c for c in node["children"] if isinstance(c, dict) and "children" in c]
                     finalize(subs, amt if amt else None)
 
-                for k in ("_count","_amount"):
+                # убрать служебные поля
+                for k in ("_count", "_amount"):
                     node.pop(k, None)
+
         
         
         # def finalize(lst, parent_amount):
