@@ -4,11 +4,12 @@ from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 import dash_ag_grid as dag
 
-from dash import dcc
+from dash import dcc, html
 import plotly.express as px
 import plotly.graph_objects as go
 
 from typing import Optional
+
 
 
 
@@ -42,6 +43,69 @@ COLS = [
     "amount",
     "quant",
 ]
+
+
+# Настройки бенчмарков
+# Настройки бенчмарков
+OWN_BRANDS      = {"Cosmo", "Cosmo Red"}   # свои бренды
+GOOD_WIDTH      = (80, 400)                # глобальная "норма" широты SKU
+TAIL_OK_PCT     = 20                       # хвост 50% SKU ≤ 20% выручки — ок (м/д)
+HHI_HIGH        = 35                       # высокая концентрация брендов по HHI
+TOP1_OK_IF_OWN  = 45                       # целевая доля топ-бренда, если он свой
+
+
+
+def derive_good_width_local(
+    df_all: pd.DataFrame,
+    sku_col: str,            # full_col
+    subcat_val,              # str | None
+    cat_val,                 # str | None
+    min_low: int = 10,
+    widen: int = 5
+) -> tuple[int, int]:
+    """
+    Возвращает (low, high) — «нормальную» широту для текущего уровня,
+    рассчитанную по пирам (Q25–Q75) среди соседних subcat внутри cat.
+    Если данных мало — возвращает глобальный GOOD_WIDTH.
+    """
+    try:
+        if df_all is None or df_all.empty or sku_col not in df_all.columns:
+            return GOOD_WIDTH
+
+        peers = df_all.copy()
+
+        # скоуп по родителю (cat), если задан
+        if cat_val is not None and "cat" in peers.columns:
+            peers = peers.loc[peers["cat"] == cat_val]
+
+        # исключаем техзначения
+        bad_vals = {"Нет категории", "Нет подкатегории", "Нет данных", "Нет группы"}
+        if "subcat" in peers.columns:
+            peers = peers.loc[~peers["subcat"].isin(bad_vals)]
+
+        if "subcat" not in peers.columns:
+            return GOOD_WIDTH
+
+        # широта у пиров: уникальные SKU в каждой subcat
+        peer_widths = peers.groupby("subcat")[sku_col].nunique()
+        peer_widths = peer_widths.dropna()
+
+        # если пиров слишком мало — fallback
+        if peer_widths.empty or subcat_val is None or len(peer_widths) < 4:
+            return GOOD_WIDTH
+
+        q25 = int(np.quantile(peer_widths, 0.25))
+        q75 = int(np.quantile(peer_widths, 0.75))
+        low  = max(min_low, q25 - widen)
+        high = max(low + 1, q75 + widen)
+        return (low, high)
+    except Exception:
+        return GOOD_WIDTH  # безопасный fallback
+
+
+
+
+
 
 def title_badge(text: str):
     return dmc.Badge(
@@ -265,9 +329,6 @@ def stores_block(df_stores: pd.DataFrame):
 
 
 
-
-
-
 def insights_block(
     df: pd.DataFrame,
     tot_revenue: float,
@@ -277,7 +338,85 @@ def insights_block(
 ):
     d = df.copy()
 
-    # ============== Утилиты ==============
+    # ================== Утилиты стиля / UI ==================
+    CARD_RADIUS = "lg"
+    CARD_SHADOW = "sm"
+    PAD = "md"
+
+    def title_badge(text: str, badge: str | None = None):
+        return dmc.Group(
+            justify="space-between", align="center",
+            children=[
+                dmc.Text(text, fw=700, fz="md", tt="none"),
+                dmc.Badge(badge, variant="outline", radius="xs") if badge else dmc.Box()
+            ]
+        )
+
+    def section_card(title: str, children, badge: str | None = None):
+        return dmc.Paper(
+            withBorder=True, radius=CARD_RADIUS, shadow=CARD_SHADOW, p=PAD,
+            children=[title_badge(title, badge), dmc.Divider(my=8, variant="dashed"), children],
+            style={"backdropFilter": "blur(2px)"}
+        )
+
+    # фикс-высота + вертикальный скролл для «ровности» карточек в одном ряду
+    def section_card_fixed(title: str, body, badge: str | None = None, h: int = 280):
+        header = dmc.Group(
+            justify="space-between", align="center",
+            children=[
+                dmc.Text(title, fw=700, fz="md"),
+                dmc.Badge(badge, variant="outline", radius="xs") if badge else dmc.Box()
+            ]
+        )
+
+        return dmc.Paper(
+            withBorder=True,
+            radius=CARD_RADIUS,
+            shadow=CARD_SHADOW,
+            p=PAD,
+            style={
+                "height": h,
+                "display": "flex",
+                "flexDirection": "column",
+                "overflow": "hidden"
+            },
+            children=[
+                header,
+                dmc.Divider(my=8, variant="dashed"),
+                dmc.ScrollArea(
+                    type="auto",
+                    scrollbarSize=8,
+                    offsetScrollbars=True,
+                    style={
+                        "flex": 1,
+                        "overflowX": "hidden",
+                        "overflowY": "auto",
+                        "paddingRight": 6
+                    },
+                    children=body,
+                ),
+            ],
+        )
+
+
+    def kpi_card(label: str, value: str, icon: str = "mdi:chart-line", hint: str = ""):
+        return dmc.Paper(
+            withBorder=True, radius=CARD_RADIUS, shadow="xs", p="sm",
+            style={"height": "100%"},
+            children=[
+                dmc.Group(
+                    gap="xs", align="center",
+                    children=[
+                        dmc.ThemeIcon(DashIconify(icon=icon, width=18), variant="light", radius="xl"),
+                        dmc.Text(label, size="sm", c="dimmed"),
+                    ]
+                ),
+                dmc.Text(value, fw=800, fz="lg", mt=4),
+                dmc.Text(hint, size="xs", c="dimmed", mt=2) if hint else dmc.Box(),
+            ]
+        )
+
+    # ================== Форматтеры ==================
     def clamp(x: float) -> float:
         try:
             x = float(x)
@@ -314,19 +453,6 @@ def insights_block(
             s += " ₽"
         return s
 
-    def section_card(title: str, children):
-        return dmc.Paper(withBorder=True, radius="md", p="md", children=[
-            dmc.Text(title, fw=600, mb=8),
-            children,
-        ])
-
-    def kpi_stat(label: str, value, hint: str = ""):
-        return dmc.Paper(withBorder=True, radius="md", p="sm", children=[
-            dmc.Text(label, size="xs", c="dimmed"),
-            dmc.Text(value, fw=700, fz="lg"),
-            (dmc.Text(hint, size="xs", c="dimmed") if hint else dmc.Box()),
-        ])
-
     def find_col(cands):
         lc = {c.lower(): c for c in d.columns}
         for name in cands:
@@ -344,7 +470,7 @@ def insights_block(
         step = 1 if base <= 1 else (2 if base <= 2 else (5 if base <= 5 else 10))
         return float(step * mag)
 
-    # ============== Приведение чисел ==============
+    # ================== Числа и колонки ==================
     for c in ["dt", "cr", "quant_dt", "quant_cr"]:
         if c in d.columns:
             d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0.0)
@@ -352,70 +478,28 @@ def insights_block(
             d[c] = 0.0
 
     d["amount"] = d["dt"] - d["cr"]
-    d["quant"]  = d["quant_dt"] - d["quant_cr"]
+    d["quant"] = d["quant_dt"] - d["quant_cr"]
     d["ret_pct"] = (d["cr"] / d["dt"].replace(0, pd.NA)).fillna(0) * 100
 
-    # ============== Имена колонок (расширенно) ==============
     date_col  = find_col(["date", "eom", "doc_date", "operation_date", "sale_date", "init_date", "дата", "Дата"])
-    init_col  = find_col(["init_date",])
+    init_col  = find_col(["init_date"])
     agent_col = find_col(["agent_name"])
     store_col = find_col(["store_gr_name"])
     cat_col   = find_col(["category", "category_name", "Категория", "Группа", "group_name"])
     brand_col = find_col(["brend", "brand", "бренд"])
     manu_col  = find_col(["manu", "manufacturer", "производитель"])
     full_col  = find_col(["fullname", "sku", "наименование"])
-    
-    # приведение к датам (без падений)
+
     if date_col is not None and date_col in d.columns:
         d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
     if init_col is not None and init_col in d.columns:
         d[init_col] = pd.to_datetime(d[init_col], errors="coerce")
-        
-    # ============== Новые номенклатуры (30 дней) ==============
-    # new_block = dmc.Box()  # пусто по умолчанию
-    # new_items_cnt = 0
-    # new_amount_sum = 0.0
-    # new_list_text = ["нет данных"]
 
-    # if (init_col is not None and init_col in d.columns and
-    #     date_col is not None and date_col in d.columns and
-    #     full_col is not None and full_col in d.columns and
-    #     not d.empty):
+    # фильтр по категории
+    if selected_category and (cat_col is not None) and (cat_col in d.columns):
+        d = d.loc[d[cat_col].astype(str) == str(selected_category)].copy()
 
-    #     max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
-    #     if pd.notna(max_sel_date):
-    #         window_start = max_sel_date - pd.Timedelta(days=30)
-    #         new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
-    #         d_new = d.loc[new_mask].copy()
-
-    #         if not d_new.empty:
-    #             # агрегаты
-    #             new_items_cnt = int(d_new[full_col].nunique())
-    #             new_amount_sum = float(d_new["amount"].sum())
-
-    #             # топ-5 новых SKU по выручке
-    #             g_new = (d_new.groupby(full_col, as_index=False)["amount"].sum()
-    #                         .sort_values("amount", ascending=False).head(5))
-    #             if not g_new.empty:
-    #                 new_list_text = [
-    #                     f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}"
-    #                     for _, r in g_new.iterrows()
-    #                 ]
-
-    #             # карточка секции
-    #             new_block = section_card(
-    #                 "Новые номенклатуры (за 30 дней)",
-    #                 dmc.Stack(gap=6, children=[
-    #                     dmc.Text(
-    #                         f"{new_items_cnt} новых SKU · выручка {fmt_compact(new_amount_sum, money=True)}",
-    #                         size="sm", c="dimmed"
-    #                     ),
-    #                     dmc.List([dmc.ListItem(x) for x in new_list_text], withPadding=True, size="sm"),
-    #                 ])
-    #             )
-    
-    
-    # ============== Новые номенклатуры (30 дней) ==============
+    # ================== Новые номенклатуры (30 дней) ==================
     new_block = dmc.Box()
     new_items_cnt = 0
     new_amount_sum = 0.0
@@ -425,10 +509,6 @@ def insights_block(
         full_col is not None and full_col in d.columns and
         not d.empty):
 
-        # приведение к датам (на всякий)
-        d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
-        d[init_col] = pd.to_datetime(d[init_col], errors="coerce")
-
         max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
         if pd.notna(max_sel_date):
             window_start = max_sel_date - pd.Timedelta(days=30)
@@ -436,60 +516,40 @@ def insights_block(
             d_new = d.loc[new_mask].copy()
 
             if not d_new.empty:
-                # агрегаты
                 new_items_cnt  = int(d_new[full_col].nunique())
                 new_amount_sum = float(d_new["amount"].sum())
 
-                # все новые SKU: сумма выручки и количества
                 g_new = (d_new.groupby(full_col, as_index=False)
                             .agg(amount=("amount", "sum"),
-                                    quant =("quant",  "sum"))
+                                 quant =("quant",  "sum"))
                             .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
                             .sort_values("amount", ascending=False))
 
-                # формируем элементы: ДВЕ строки
                 def item_two_lines(i, name, q, a, p):
-                    top = dmc.Text(
-                        f"{i}. {name}",
-                        size="sm",
-                        lineClamp=1,
-                        style={"minWidth": 0}
-                    )
+                    top = dmc.Text(f"{i}. {name}", size="sm", lineClamp=1, style={"minWidth": 0})
                     q_txt = f"{int(round(q))} шт" if pd.notna(q) else "— шт"
                     a_txt = fmt_compact(a, money=True)
                     p_txt = f"~{fmt_compact(p, money=True)}/ед" if pd.notna(p) and p > 0 else "~—/ед"
-                    bottom = dmc.Text(
-                        f"Продано: {q_txt} · {a_txt} · {p_txt}",
-                        size="xs",
-                        c="dimmed",
-                        style={"fontStyle": "italic"},
-                    )
+                    bottom = dmc.Text(f"Продано: {q_txt} · {a_txt} · {p_txt}", size="xs", c="dimmed", style={"fontStyle": "italic"})
                     return dmc.ListItem(dmc.Stack(gap=2, children=[top, bottom]))
 
                 new_items = [
                     item_two_lines(i, getattr(r, full_col), float(r.quant), float(r.amount),
-                                (float(r.price) if pd.notna(r.price) else None))
+                                   (float(r.price) if pd.notna(r.price) else None))
                     for i, r in enumerate(g_new.itertuples(index=False), start=1)
                 ]
 
-                # шапка карточки
                 header_row = dmc.Group(
-                    justify="space-between",
-                    align="center",
+                    justify="space-between", align="center",
                     children=[
                         dmc.Group(gap="xs", align="center", children=[
                             dmc.Badge(f"{new_items_cnt} новых SKU", variant="light", color="teal", radius="sm"),
-                            dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}",
-                                    variant="outline", color="blue", radius="sm"),
+                            dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}", variant="outline", color="blue", radius="sm"),
                         ]),
-                        dmc.Text(
-                            f"{window_start.date().strftime('%d.%m.%Y')} — {max_sel_date.date().strftime('%d.%m.%Y')}",
-                            size="xs", c="dimmed"
-                        ),
+                        dmc.Text(f"{window_start:%d.%m.%Y} — {max_sel_date:%d.%m.%Y}", size="xs", c="dimmed"),
                     ]
                 )
 
-                # карточка с вертикальным скроллом
                 new_block = section_card(
                     "Новые номенклатуры (за 30 дней)",
                     dmc.Stack(
@@ -497,19 +557,13 @@ def insights_block(
                         children=[
                             header_row,
                             dmc.ScrollArea(
-                                type="auto",
-                                scrollbarSize=8,
-                                h=260,  # фиксируем высоту видимой области
+                                type="auto", scrollbarSize=8, h=160,
                                 styles={"viewport": {"overflowX": "hidden"}},
-                                children=dmc.List(
-                                    new_items,
-                                    withPadding=True,
-                                    size="sm",
-                                    spacing="xs",
-                                ),
+                                children=dmc.List(new_items, withPadding=True, size="sm", spacing="xs"),
                             ),
                         ],
                     ),
+                    badge="Fresh"
                 )
             else:
                 new_block = section_card(
@@ -522,15 +576,7 @@ def insights_block(
             dmc.Alert("Колонка init_date не найдена — невозможно определить новые SKU.", color="gray", variant="light", radius="sm")
         )
 
-
-
-
-
-    # Фильтр по категории
-    if selected_category and (cat_col is not None) and (cat_col in d.columns):
-        d = d.loc[d[cat_col].astype(str) == str(selected_category)].copy()
-
-    # ============== Сводные числа ==============
+    # ================== Сводные числа ==================
     n_items = int(d[full_col].nunique()) if full_col in d.columns else 0
     n_brand = int(d[brand_col].nunique()) if brand_col in d.columns else 0
     n_manu  = int(d[manu_col].nunique())  if manu_col  in d.columns else 0
@@ -539,7 +585,6 @@ def insights_block(
     total_cr = float(d["cr"].sum())
     amount   = float(d["amount"].sum())
     q_net    = float(d["quant"].sum())
-
     avg_price_net = (amount / q_net) if q_net > 0 else 0.0
 
     revenue_pct = clamp((amount / tot_revenue * 100) if tot_revenue else 0.0)
@@ -555,32 +600,138 @@ def insights_block(
         dt_des = float(d.loc[is_des, "dt"].sum())
         designer_share = clamp((dt_des / total_dt * 100) if total_dt > 0 else 0.0)
 
-    # ============== Парето ==============
-    by_fullname_amt = (d.groupby(full_col, as_index=False)["amount"].sum()) if full_col in d.columns else pd.DataFrame(columns=[full_col,"amount"])
-    pareto_text = dmc.Text("нет данных", size="sm", c="dimmed")
-    pareto_widget = dmc.Box()
+    
+
+    # ================== Парето 80/20 ==================
+
+    by_fullname_amt = (
+        d.groupby(full_col, as_index=False)["amount"].sum()
+    ) if full_col in d.columns else pd.DataFrame(columns=[full_col, "amount"])
+
+    pareto_body = dmc.Text("нет данных", size="sm", c="dimmed")
+
     if amount > 0 and n_items > 0 and not by_fullname_amt.empty:
         g = by_fullname_amt.sort_values("amount", ascending=False).reset_index(drop=True)
         total_amt = max(1e-9, g["amount"].sum())
         g["cum_share"] = g["amount"].cumsum() / total_amt * 100
-        k80 = int((g["cum_share"] >= 80).idxmax()) + 1 if not g.empty else 0
-        k80 = min(k80, n_items)
-        share_of_cat = (k80 / n_items * 100) if n_items else 0
-        current_cum = float(g["cum_share"].iloc[k80-1]) if k80 > 0 else 0.0
 
-        pareto_text = dmc.Text(
-            f"Топ-{k80} SKU (~{share_of_cat:.1f}%) формируют 80% выручки".replace(".", ","),
-            size="sm"
+        def k_for(pct: float) -> int:
+            return int((g["cum_share"] >= pct).idxmax()) + 1 if not g.empty else 0
+
+        k50 = min(k_for(50), n_items)
+        k80 = min(k_for(80), n_items)
+        k90 = min(k_for(90), n_items)
+
+        current_cum_80 = float(g["cum_share"].iloc[k80-1]) if k80 > 0 else 0.0
+        share_of_cat_80 = (k80 / n_items * 100) if n_items else 0.0
+
+        head_amt_80 = float(g["amount"].head(k80).sum())
+        tail_cnt_80 = int(max(0, n_items - k80))
+        tail_amt_80 = float(max(0.0, total_amt - head_amt_80))
+        tail_share_80 = max(0.0, 100.0 - current_cum_80)
+        avg_tail_80 = (tail_amt_80 / tail_cnt_80) if tail_cnt_80 > 0 else 0.0
+
+        header_txt = dmc.Text(
+            f"Топ-{k80} SKU (~{share_of_cat_80:.1f}%) формируют 80% выручки".replace(".", ","),
+            size="sm", fw=600
         )
-        pareto_widget = dmc.Stack(gap=6, children=[
-            dmc.Progress(value=clamp(current_cum), size="md", radius="sm"),
-            dmc.Group(justify="space-between", children=[
-                dmc.Text(f"Достигнуто: {fmt_pct(current_cum)}", size="xs", c="dimmed"),
-                dmc.Badge("80%", variant="outline", radius="xs")
-            ])
-        ])
 
-    # ============== Топы ==============
+        def mini(label, value):
+            return dmc.Paper(
+                withBorder=True, radius="md", p="xs",
+                children=[
+                    dmc.Text(label, size="xs", c="dimmed"),
+                    dmc.Text(value, fw=700),
+                ]
+            )
+
+        mini_kpis = dmc.SimpleGrid(
+            cols={"base": 3}, spacing="xs",
+            children=[
+                mini("50% выручки", f"{k50} SKU"),
+                mini("80% выручки", f"{k80} SKU"),
+                mini("90% выручки", f"{k90} SKU"),
+            ]
+        )
+
+        bar = dmc.Stack(
+            gap=6,
+            children=[
+                dmc.Progress(value=clamp(current_cum_80), size="md", radius="sm", striped=True, animated=True),
+                dmc.Group(justify="space-between", align="center", children=[
+                    dmc.Text(f"Достигнуто: {fmt_pct(current_cum_80)}", size="xs", c="dimmed"),
+                    dmc.Badge("Цель: 80%", variant="outline", radius="xs"),
+                ]),
+            ],
+        )
+
+        tail_block = dmc.SimpleGrid(
+            cols={"base": 2}, spacing="xs",
+            children=[
+                dmc.Text(f"Хвост: {tail_cnt_80} SKU · {fmt_pct(tail_share_80,1)} выручки", size="xs", c="dimmed"),
+                dmc.Text(f"Средняя выручка на 1 SKU в хвосте: {fmt_compact(avg_tail_80, money=True)}", size="xs", c="dimmed"),
+            ],
+        )
+
+        # === Аналитический вывод (адаптирован под мебель/декор) ===
+        if share_of_cat_80 < 18:
+            summary_text = dmc.Text(
+                "⚠ Критическая концентрация: 80% выручки дают <18% SKU. Сильная зависимость от ограниченного набора хитов.",
+                size="xs", c="red", fw=500
+            )
+        elif share_of_cat_80 < 25:
+            summary_text = dmc.Text(
+                "⚠ Высокая концентрация: 18–25% SKU дают 80% выручки. Проверь риски по наличию и поставкам топ-позиций.",
+                size="xs", c="orange", fw=500
+            )
+        # elif share_of_cat_80 <= 45:
+        #     summary_text = dmc.Text(
+        #         "✅ Оптимальное распределение: 25–45% SKU формируют 80% выручки — баланс фокуса и широты ассортимента.",
+        #         size="xs", c="green", fw=500
+        #     )
+        
+        elif share_of_cat_80 <= 45:
+            if n_items > GOOD_WIDTH[1]:
+                summary_text = dmc.Text(
+                    "ℹ Структура продаж здоровая (Парето ок), но ассортимент чрезмерно широк — чистка хвоста повысит эффективность.",
+                    size="xs", c="orange", fw=500
+                )
+            else:
+                summary_text = dmc.Text(
+                    "✅ Оптимальное распределение: 25–45% SKU формируют 80% выручки — баланс фокуса и широты ассортимента.",
+                    size="xs", c="green", fw=500
+                )
+        elif share_of_cat_80 <= 55:
+            summary_text = dmc.Text(
+                "ℹ Рассеяние продаж: 45–55% SKU для 80% выручки. Вероятен перегруз хвостом — проверь дубли и витрину.",
+                size="xs", c="orange", fw=500
+            )
+        else:
+            summary_text = dmc.Text(
+                "⚠ Перерассеяние: >55% SKU нужны, чтобы набрать 80% выручки. Сильный хвост — оптимизируй ассортимент.",
+                size="xs", c="red", fw=500
+            )
+
+        pareto_body = dmc.Stack(
+            gap=8,
+            children=[
+                header_txt,
+                mini_kpis,
+                bar,
+                dmc.Divider(variant="dashed"),
+                tail_block,
+                summary_text,
+            ],
+        )
+
+
+    # pareto_card = section_card_fixed("Парето 80/20", pareto_body, h=260)
+
+
+
+
+
+    # ================== Топы брендов/производителей ==================
     def top_money(col, k=3):
         if (col is None) or (col not in d.columns) or d.empty:
             return ["нет данных"]
@@ -590,16 +741,10 @@ def insights_block(
             return ["нет данных"]
         return [f"{r[col]} — {fmt_compact(r['amount'], money=True)}" for _, r in g.iterrows()]
 
-    brands_list = top_money(brand_col)
-    manus_list  = top_money(manu_col)
+    brands_list = top_money(brand_col, k=5)
+    manus_list  = top_money(manu_col, k=5)
 
-    # Лучшие SKU
-    best_amt_txt = ["нет данных"]
-    if not by_fullname_amt.empty:
-        best_amt = by_fullname_amt.sort_values("amount", ascending=False).head(5)
-        best_amt_txt = [f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in best_amt.iterrows()] or ["нет данных"]
-
-    # ============== Возвраты/качество ==============
+    # ================== Возвраты/качество ==================
     def risk_color(p):
         return "red" if p >= 30 else ("yellow" if p >= 20 else "green")
 
@@ -626,10 +771,12 @@ def insights_block(
                         .head(5))
             risky_list = [
                 dmc.ListItem(
-                    dmc.Badge(
-                        f"{r[full_col]} — {fmt_pct(r['ret_pct'], 1)}",
-                        color=risk_color(float(r["ret_pct"])),
-                        variant="filled", radius="xs"
+                    dmc.Group(
+                        gap="xs",
+                        children=[
+                            dmc.Badge(f"{fmt_pct(r['ret_pct'], 1)}", color=risk_color(float(r["ret_pct"])), variant="filled", radius="xs"),
+                            dmc.Text(f"{r[full_col]}", size="sm")
+                        ]
                     )
                 ) for _, r in risky_top.iterrows()
             ]
@@ -642,9 +789,12 @@ def insights_block(
         return ("yellow", f"Есть возвраты выше нормы: {count_20} SKU с ≥20%")
 
     quality_color, quality_text = quality_state(max_ret, risky_count, very_high_count)
-    quality_alert = dmc.Alert(quality_text, color=quality_color, variant="light", withCloseButton=True)
+    quality_alert = dmc.Alert(
+        dmc.Group(gap="xs", children=[DashIconify(icon="mdi:alert-decagram-outline", width=18), dmc.Text(quality_text)]),
+        color=quality_color, variant="light", withCloseButton=True, radius="md"
+    )
 
-    # ============== Гистограмма цен (опционально) ==============
+    # ================== Гистограмма цен (опционально) ==================
     price_hist_card = dmc.Box()
     if "quant_dt" in d.columns and (d["quant_dt"] > 0).any():
         d_price = d.loc[(d["quant_dt"] > 0) & (d["dt"] > 0)].copy()
@@ -657,65 +807,169 @@ def insights_block(
             d_clip = d_price.loc[mask].copy()
 
             fig_hist = px.histogram(
-                d_clip,
-                x="price_gross_unit",
-                nbins=24,
-                labels={"price_gross_unit": "Цена за единицу (Gross)"},
+                d_clip, x="price_gross_unit", nbins=24, labels={"price_gross_unit": "Цена за единицу (Gross)"},
             )
             fig_hist.update_xaxes(range=[float(q_lo), float(q_hi)])
             fig_hist.update_layout(height=220, margin=dict(l=10, r=10, t=10, b=10), hovermode="x unified")
-            caption = dmc.Text(
-                f"Показаны 1–99 перцентили; исключено выбросов: {clipped}",
-                size="xs", c="dimmed"
-            )
+
+            caption = dmc.Text(f"Показаны 1–99 перцентили; исключено выбросов: {clipped}", size="xs", c="dimmed")
             price_hist_card = section_card(
                 "Распределение цен (Gross, за ед.)",
-                dmc.Stack(gap=6, children=[dcc.Graph(figure=fig_hist, config={"displayModeBar": False}), caption])
+                dmc.Stack(gap=6, children=[dcc.Graph(figure=fig_hist, config={"displayModeBar": False}), caption]),
+                badge="Distribution"
             )
 
-   
-
-    # ============== KPI ==============
+    # ================== KPI ==================
     kpis_grid = dmc.SimpleGrid(
         cols={"base": 1, "sm": 2},
-        spacing="sm",
+        spacing="lg",
+        verticalSpacing="lg",
+        style={"alignItems": "stretch", "justifyContent": "center"},
         children=[
             kpi_card("Выручка (нетто)", fmt_compact(amount, money=True), icon="mdi:cash-multiple"),
-            kpi_card("Средняя цена (Net)", fmt_compact(avg_price_net, money=True), icon="mdi:currency-rub"),
+            kpi_card("Средняя цена", fmt_compact(avg_price_net, money=True), icon="mdi:currency-rub"),
             kpi_card("Сумма возвратов", fmt_compact(total_cr, money=True), icon="mdi:cash-refund"),
             kpi_card("Коэфф. возвратов", fmt_pct(ret_coef, 1), icon="mdi:percent"),
-        ]
+        ],
     )
 
-
-    # ============== Кольца ==============
-    rings_row = dmc.Group(gap="lg", wrap="wrap", children=[
-        dmc.Stack(align="center", gap=0, children=[
-            dmc.RingProgress(sections=[{"value": float(revenue_pct), "color": "blue"}], size=82, thickness=10),
-            dmc.Text("Доля в выручке", size="xs", c="dimmed"),
-            dmc.Text(fmt_pct(revenue_pct, 2), fw=600),
-        ]),
-        dmc.Stack(align="center", gap=0, children=[
-            dmc.RingProgress(sections=[{"value": float(ret_coef), "color": "orange"}], size=82, thickness=10),
-            dmc.Text("Коэф. возвратов", size="xs", c="dimmed"),
-            dmc.Text(fmt_pct(ret_coef, 2), fw=600),
-        ]),
-        dmc.Stack(align="center", gap=0, children=[
-            dmc.RingProgress(sections=[{"value": float(agent_share), "color": "cyan"}], size=82, thickness=10),
-            dmc.Text("Доля дизайнеров", size="xs", c="dimmed"),
-            dmc.Text(fmt_pct(agent_share, 2), fw=600),
-        ]),
-        (dmc.Stack(align="center", gap=0, children=[
-            dmc.RingProgress(sections=[{"value": float(designer_share or 0), "color": "grape"}], size=82, thickness=10),
-            dmc.Text("«Дизайнер»", size="xs", c="dimmed"),
-            dmc.Text(fmt_pct((designer_share or 0), 1), fw=600),
-        ]) if designer_share is not None else dmc.Box()),
-    ])
-
    
+    
+    # ================== Кольца (индикаторы) + автоанализ ==================
 
-    # ============== SKU-аналитика ==============
-    # Лучшие SKU по количеству (как было)
+    # плитка кольца (единообразный вид)
+    def ring_tile(label: str, value_pct: float, color: str):
+        return dmc.Stack(
+            align="center", gap=2,
+            children=[
+                dmc.RingProgress(
+                    sections=[{"value": float(clamp(value_pct)), "color": color}],
+                    size=88, thickness=10
+                ),
+                dmc.Text(label, size="xs", c="dimmed"),
+                dmc.Text(fmt_pct(value_pct, 2), fw=600),
+            ],
+            style={"minWidth": 110}
+        )
+
+    # сами кольца в ровной сетке (адаптивно)
+    rings_grid = dmc.SimpleGrid(
+        # cols={"base": 2, "sm": 3, "lg": 4},
+        cols=3,
+        spacing="lg",
+        style={"alignItems": "center", "justifyItems": "center"},
+        children=[
+            ring_tile("Доля в выручке", revenue_pct, "blue"),
+            ring_tile("Коэф. возвратов", ret_coef, "orange"),
+            ring_tile("Доля дизайнеров", agent_share, "cyan"),
+            (ring_tile("«Дизайнер»", (designer_share or 0), "grape") if designer_share is not None else dmc.Box()),
+        ],
+    )
+
+    # ---- автоанализ (короткий вердикт менеджеру) ----
+    notes = []
+
+    # 1) вклад сегмента в общую выручку
+    if revenue_pct >= 30:
+        notes.append("Высокий вклад сегмента в выручку — приоритетен для роста/поддержки.")
+    elif revenue_pct >= 10:
+        notes.append("Средний вклад в выручку — потенциал для масштабирования при сохранении маржи.")
+    else:
+        notes.append("Низкий вклад — имеет смысл точечно оптимизировать ассортимент/цену.")
+
+    # 2) возвраты
+    if ret_coef >= 30:
+        ret_level, ret_color = "критично высокие возвраты", "red"
+        notes.append("Возвраты критично высокие — проверь качество, логистику и ожидания клиентов.")
+    elif ret_coef >= 20:
+        ret_level, ret_color = "высокие возвраты", "orange"
+        notes.append("Возвраты выше нормы — проведи разбор топ-SKU по обороту и браку.")
+    elif ret_coef >= 10:
+        ret_level, ret_color = "умеренные возвраты", "yellow"
+        notes.append("Возвраты умеренные — держите на контроле проблемные позиции.")
+    else:
+        ret_level, ret_color = "в норме", "green"
+        notes.append("Возвраты в норме — серьёзных рисков не видно.")
+
+    # 3) доля дизайнеров
+    if agent_share >= 25:
+        notes.append("Высокая доля дизайнеров — зависимость от канала, проверь концентрацию по агентам.")
+    elif agent_share <= 5:
+        notes.append("Низкая доля дизайнеров — можно тестировать стимулирование канала дизайнеров.")
+
+    # 4) если есть «дизайнер» как агент
+    if designer_share is not None:
+        if designer_share >= 20:
+            notes.append("Сегмент сильно зависит от SKU «дизайнеров» — оцени устойчивость спроса.")
+        elif designer_share <= 5:
+            notes.append("Вклад SKU «дизайнеров» невелик — есть пространство для промо/витрины.")
+
+    # соберём вывод в Alert (цвет — по возвратам)
+    analysis_alert = dmc.Alert(
+        dmc.Stack(
+            gap=4,
+            children=[dmc.Text("Вывод:", fw=600, size="sm")] + [dmc.Text(f"• {t}", size="xs") for t in notes]
+        ),
+        color=ret_color, variant="light", radius="md"
+    )
+
+    # итоговое содержимое карточки «Индикаторы»
+    indicators_body = dmc.Stack(
+        gap=12,
+        children=[
+            rings_grid,
+            dmc.Divider(variant="dashed"),
+            analysis_alert,
+        ],
+    )
+    
+    def section_card_fixed_scroll(title: str, body, h: int = 260, badge: str | None = None):
+        header = dmc.Group(
+            justify="space-between",
+            align="center",
+            children=[
+                dmc.Text(title, fw=700),
+                (dmc.Badge(badge, variant="outline", radius="xs") if badge else dmc.Box())
+            ],
+        )
+
+        return dmc.Card(
+            withBorder=True, radius="md", shadow="sm",
+  
+            style={
+                "height": h,
+                "display": "flex",
+                "flexDirection": "column",
+                "overflow": "hidden",  # чтобы внутренности не выпирали за радиус
+            },
+            children=[
+                dmc.CardSection(dmc.Box(p="md", children=header)),
+                dmc.Divider(variant="dashed"),
+                # ТЕЛО КАРТОЧКИ: занимает остаток высоты
+                dmc.CardSection(
+                    inheritPadding=True,
+                    style={
+                        "flex": "1 1 auto",
+                        "minHeight": 0,      # ключ к рабочему 100% внутри
+                        "display": "flex",
+                    },
+                    children=dmc.ScrollArea(
+                        type="scroll",
+                        offsetScrollbars=True,
+                        # h="100%",            # 100% от секции выше
+                        children=dmc.Box(p="md", children=body),
+                    ),
+                ),
+            ],
+        )
+
+
+
+
+    
+
+
+    # ================== SKU-аналитика ==================
     best_qty_txt = ["нет данных"]
     by_fullname_qty = (
         d.groupby(full_col, as_index=False).agg(q=("quant", "sum"), a=("amount", "sum"))
@@ -727,83 +981,472 @@ def insights_block(
             price = (r["a"] / r["q"]) if r["q"] > 0 else 0.0
             best_qty_txt.append(f"{r[full_col]} — {int(round(r['q']))} шт, ~{fmt_compact(price, money=True)}/ед")
 
-    # Топ SKU по выручке — фикс
     best_amt_list = ["нет данных"]
-    if 'by_fullname_amt' in locals() and not by_fullname_amt.empty:
+    if not by_fullname_amt.empty:
         top_amt = (
             by_fullname_amt
             .copy()
             .assign(amount=lambda x: pd.to_numeric(x["amount"], errors="coerce").fillna(0.0))
             .query("amount > 0")
-            .sort_values("amount", ascending=False)   # ← вот ключевая правка
+            .sort_values("amount", ascending=False)
             .head(5)
         )
         if not top_amt.empty:
             best_amt_list = [f"{r[full_col]} — {fmt_compact(r['amount'], money=True)}" for _, r in top_amt.iterrows()]
 
     sku_row = dmc.SimpleGrid(
-        cols={"base": 1, "sm": 2}, spacing="md",
+        cols={"base": 1, "sm": 2},
+        spacing="md",
         children=[
-            section_card("Лучшие SKU по выручке", dmc.List([dmc.ListItem(x) for x in best_amt_list], withPadding=True)),
+            section_card("Лучшие SKU по выручке", dmc.List([dmc.ListItem(x) for x in best_amt_list], withPadding=True, size="sm")),
+            section_card("Лучшие SKU по количеству", dmc.List([dmc.ListItem(x) for x in best_qty_txt], withPadding=True, size="sm")),
+        ],
+    )
 
-               
-           section_card(
-            "Лучшие SKU по выручке",
-                dmc.List(
-                    [dmc.ListItem(x) for x in best_qty_txt],
-                    withPadding=True,
-                ),
-            )
+    # ================== Доп. графики ==================
+    def has_children(node) -> bool:
+        return getattr(node, "children", None) not in (None, [], ())
 
+    extras_charts = dmc.Box(children=price_hist_card) if has_children(price_hist_card) else dmc.Box()
+    
+    
+    
+    
+    # ================== Ассортимент  ==================
+
+
+
+    def safe_pct(num, den): 
+        return (float(num) / float(den) * 100) if den else 0.0
+
+    assort_text = dmc.Group(
+        gap="sm",
+        children=[
+            dmc.Badge(f"{n_items} SKU", color="gray", variant="outline", radius="sm"),
+            dmc.Badge(f"{n_brand} брендов", color="gray", variant="outline", radius="sm"),
+            dmc.Badge(f"{n_manu} производителей", color="gray", variant="outline", radius="sm"),
         ],
     )
 
 
-    # ============== Доп. графики ==============
-    def has_children(node) -> bool:
-        return getattr(node, "children", None) not in (None, [], ())
+    # 1) Агрегации по брендам и SKU
+    dom_brand, top1_share, top3_share, hhi, avg_sku_per_brand = "—", 0.0, 0.0, 0.0, 0.0
+    if (brand_col is not None) and (brand_col in d.columns) and not d.empty:
+        g_brand = (d.groupby(brand_col, as_index=False)
+                    .agg(amount=("amount","sum"),
+                        sku_cnt=(full_col, "nunique") if full_col in d.columns else ("amount","size"))
+                    .sort_values("amount", ascending=False))
+        total_amt_b = float(g_brand["amount"].sum()) or 1e-9
+        if not g_brand.empty:
+            dom_brand   = str(g_brand.iloc[0][brand_col])
+            top1_share  = safe_pct(g_brand.iloc[0]["amount"], total_amt_b)
+            top3_share  = safe_pct(g_brand["amount"].head(3).sum(), total_amt_b)
+            shares      = (g_brand["amount"] / total_amt_b).to_numpy()
+            hhi         = float((shares**2).sum()) * 100  # 0..100
+            avg_sku_per_brand = float(g_brand["sku_cnt"].sum() / max(1, len(g_brand)))
 
-    extras_charts = (
-        dmc.SimpleGrid(cols={"base":1, "md":2}, spacing="md",
-                       children=[price_hist_card, ])
-        if (has_children(price_hist_card) )
-        else dmc.Box()
+    tail50_share = 0.0
+    if (full_col is not None) and (full_col in d.columns) and not d.empty:
+        g_sku = (d.groupby(full_col, as_index=False)["amount"].sum()
+                .sort_values("amount", ascending=False).reset_index(drop=True))
+        total_amt_all = float(g_sku["amount"].sum()) or 1e-9
+        k50           = int(np.ceil(len(g_sku) * 0.5))
+        tail50_amt    = float(g_sku["amount"].iloc[k50:].sum()) if k50 < len(g_sku) else 0.0
+        tail50_share  = safe_pct(tail50_amt, total_amt_all)
+    
+    
+    # --- после вычисления tail50_share / pareto_* и ПЕРЕД BLOATED ---
+
+    # дефолт на случай отсутствия пиров
+    LOW_W, HIGH_W = GOOD_WIDTH
+
+    # источник пиров: если есть общий d_all — используем его, иначе текущий d
+    df_all_source = globals().get("d_all", d)
+
+    curr_subcat = d["subcat"].dropna().unique()[0] if "subcat" in d.columns and d["subcat"].nunique()==1 else None
+    curr_cat    = d["cat"].dropna().unique()[0]    if "cat"    in d.columns and d["cat"].nunique()==1    else None
+
+    # попытка получить локальные пороги (если не получится — останутся дефолтные)
+    LOW_W, HIGH_W = derive_good_width_local(
+        df_all=df_all_source,
+        sku_col=full_col,
+        subcat_val=curr_subcat,
+        cat_val=curr_cat,
+        min_low=10,
+        widen=5
     )
 
-    # ============== Итоговый layout ==============
-    left_col = dmc.Stack(gap="md", children=[
-        section_card(title_badge("KPI"), kpis_grid),
-        section_card(
-            title_badge("Ассортимент"),
-            dmc.Text(
-                f"{n_items} номенклатур · {n_brand} брендов · {n_manu} производителей",
-                size="sm",
-                opacity=0.8
-            ),
-        ),
-        section_card(title_badge("Индикаторы"), rings_row),
-    ])
 
-    right_col = dmc.Stack(gap="md", children=[
-        new_block,  # 👈 добавили сюда
-        section_card("Парето 80/20", dmc.Stack(gap=6, children=[pareto_text, pareto_widget])),
-        section_card("Рисковые SKU", dmc.Stack(gap=6, children=[quality_alert, dmc.List(risky_list, withPadding=True)])),
-        dmc.SimpleGrid(cols={"base":1, "sm":2}, spacing="md", children=[
+        # --- Парето-метрика для согласованности с карточкой Парето + признаки "раздут" ---
+    pareto_share_80 = None          # % SKU, дающих 80% выручки
+    zero_cnt = 0
+    zero_share = 0.0
+    head_avg_80 = 0.0
+    tail_avg_80 = 0.0
+
+    if (full_col is not None) and (full_col in d.columns) and not d.empty:
+        g_p = (d.groupby(full_col, as_index=False)["amount"].sum()
+                .sort_values("amount", ascending=False).reset_index(drop=True))
+        total_p = float(g_p["amount"].sum()) or 1e-9
+        g_p["cum_share"] = g_p["amount"].cumsum() / total_p * 100
+        zero_cnt = int((g_p["amount"] <= 1e-9).sum())
+        zero_share = (zero_cnt / n_items * 100) if n_items else 0.0
+
+        if not g_p.empty:
+            k80_idx = int((g_p["cum_share"] >= 80).idxmax())
+            k80_loc = k80_idx + 1
+            pareto_share_80 = (k80_loc / n_items * 100) if n_items else None
+
+            head_amt_80 = float(g_p["amount"].head(k80_loc).sum()) if k80_loc > 0 else 0.0
+            tail_cnt_80 = max(0, n_items - k80_loc)
+            tail_amt_80 = max(0.0, total_p - head_amt_80)
+            head_avg_80 = (head_amt_80 / k80_loc) if k80_loc > 0 else 0.0
+            tail_avg_80 = (tail_amt_80 / tail_cnt_80) if tail_cnt_80 > 0 else 0.0
+
+
+    # Флаг "раздут"
+    BLOATED = (
+        n_items > HIGH_W and (
+            (pareto_share_80 is not None and pareto_share_80 > 50)
+            or (tail50_share >= 25)
+            or (zero_share >= 25)
+            or (head_avg_80 > 0 and tail_avg_80 < 0.3 * head_avg_80)
+        )
+    )
+
+
+    
+    # источник пиров: если есть общий d_all — используем его, иначе текущий d
+    df_all_source = globals().get("d_all", d)
+
+    curr_subcat = d["subcat"].dropna().unique()[0] if "subcat" in d.columns and d["subcat"].nunique()==1 else None
+    curr_cat    = d["cat"].dropna().unique()[0]    if "cat"    in d.columns and d["cat"].nunique()==1    else None
+
+    LOW_W, HIGH_W = derive_good_width_local(
+        df_all=df_all_source,
+        sku_col=full_col,
+        subcat_val=curr_subcat,
+        cat_val=curr_cat,
+        min_low=10,
+        widen=5
+    )
+
+
+
+    # 2) Статус (светофор) — короткая интегральная оценка
+    score = 70
+
+    # --- широта ассортимента ---
+    if n_items < LOW_W:
+        score -= 15
+    elif n_items > HIGH_W:
+        if BLOATED:
+            score -= 20
+        else:
+            score -= 5
+    else:
+        score += 5
+
+
+    # --- концентрация брендов ---
+    if dom_brand in OWN_BRANDS:
+        if top1_share >= TOP1_OK_IF_OWN:
+            score += 10
+        elif top1_share <= 35:
+            score -= 5
+    else:
+        if top1_share >= 45 or hhi >= HHI_HIGH:
+            score -= 15
+
+    # --- хвост 50% SKU ---
+    if tail50_share <= TAIL_OK_PCT:
+        score += 5   # было +10
+    elif tail50_share >= 25:
+        score -= 10
+
+    # --- доп. штраф за балласт ---
+    if zero_share >= 25:
+        score -= 10
+    if pareto_share_80 is not None and pareto_share_80 > 55:
+        score -= 5
+
+    # --- финальный статус ---
+    status, color = (
+        ("Хорошо", "green") if score >= 75 else
+        ("Внимание", "yellow") if score >= 55 else
+        ("Риск", "red")
+    )
+
+    # Жёсткое правило: раздутый ассортимент не может быть "Хорошо"
+    if BLOATED and status == "Хорошо":
+        status, color = "Внимание", "yellow"
+
+    status_banner = dmc.Alert(
+        dmc.Group(
+            gap="xs",
+            children=[
+                DashIconify(
+                    icon=(
+                        "mdi:check-decagram" if color == "green"
+                        else "mdi:alert" if color == "yellow"
+                        else "mdi:alert-octagon"
+                    ), width=18
+                ),
+                dmc.Text(f"Статус: {status}", fw=700),
+                dmc.Badge(f"Score {int(score)}", variant="outline", radius="xs"),
+            ],
+        ),
+        color=color, variant="light", radius="md"
+    )
+
+
+    # 3) Вертикальные метрики с вердиктом
+    def verdict_badge(text: str, color: str):
+        return dmc.Badge(text, color=color, variant="light", radius="sm")
+
+
+    def label_badge(text: str):
+        return dmc.Badge(
+            text.upper(),
+            variant="light", color="blue", radius="sm", size="sm",
+            styles={"root": {"letterSpacing": "0.3px"}}
+        )
+
+    def metric_row(label: str, value: str, verdict_text: str, color: str, hint: str = ""):
+        return dmc.Group(
+            justify="space-between", align="center", style={"width": "100%"},
+            children=[
+                # ЛЕВАЯ ЧАСТЬ: бейдж-лейбл + значение + хинт
+                dmc.Group(
+                    gap="sm", align="center",
+                    children=[
+                        label_badge(label),                               # ← бейдж заголовка
+                        dmc.Stack(gap=0, children=[
+                            dmc.Text(value, fw=800, fz="lg"),             # значение
+                            (dmc.Text(hint, size="xs", c="dimmed")        # хинт
+                            if hint else dmc.Box()),
+                        ]),
+                    ],
+                ),
+                # ПРАВАЯ ЧАСТЬ: вердикт
+                dmc.Badge(verdict_text.upper(), color=color, variant="light", radius="sm"),
+            ],
+        )
+
+
+    rows = []
+    own = dom_brand in OWN_BRANDS
+
+    # Топ-1 бренд
+    if own:
+        if top1_share >= TOP1_OK_IF_OWN: v_text, v_color, hint = "норма", "green",  "для собственного бренда целевой фокус"
+        elif top1_share >= 40:           v_text, v_color, hint = "внимание","yellow","доля ниже целевой — усилить промо/дистрибуцию"
+        else:                            v_text, v_color, hint = "риск",   "red",   "слишком низкая доля собственного бренда"
+    else:
+        if   top1_share <= 35:           v_text, v_color, hint = "норма",  "green", "зависимости от одного бренда нет"
+        elif top1_share <= 45:           v_text, v_color, hint = "внимание","yellow","усиливается зависимость от лидера"
+        else:                            v_text, v_color, hint = "риск",   "red",   "высокая зависимость от одного бренда"
+    rows.append(metric_row("Топ-1 бренд", f"{dom_brand} · {fmt_pct(top1_share,1)}", v_text, v_color, hint))
+
+    # Топ-3 бренда
+    if own and top1_share >= TOP1_OK_IF_OWN:
+        v_text, v_color, hint = "норма", "green", "ожидаемо высокая доля топ-3 при собственном бренде"
+    else:
+        if   top3_share < 55:  v_text, v_color, hint = "внимание","yellow","слишком рассеянная выручка по брендам"
+        elif top3_share <= 85: v_text, v_color, hint = "норма",  "green", "здоровая доля топ-3"
+        else:                  v_text, v_color, hint = "внимание","yellow","концентрация высоковата — следите за рисками"
+    rows.append(metric_row("Топ-3 бренда", fmt_pct(top3_share,1), v_text, v_color, hint))
+
+    # HHI брендов
+    if   hhi > 50:
+        if own: v_text, v_color, hint = "норма","green","монобрендовая модель — ок для собственного бренда"
+        else:   v_text, v_color, hint = "риск", "red",  "высокая концентрация брендов — зависимость"
+    elif hhi < 15: v_text, v_color, hint = "норма","green","низкая концентрация, структура диверсифицирована"
+    else:          v_text, v_color, hint = "внимание","yellow","умеренная концентрация — держите под контролем"
+    rows.append(metric_row("HHI брендов", f"{hhi:.1f}".replace(".", ","), v_text, v_color, hint))
+
+    # SKU на бренд (средняя глубина)
+    if   avg_sku_per_brand < 6:   v_text, v_color, hint = "внимание","yellow","малая глубина линейки на бренд"
+    elif avg_sku_per_brand <= 50: v_text, v_color, hint = "норма",  "green", "достаточная глубина"
+    else:                         v_text, v_color, hint = "внимание","yellow","перегруз по SKU на бренд — проверьте дубли"
+    rows.append(metric_row("SKU/бренд (ср.)", f"{avg_sku_per_brand:.1f}".replace(".", ","), v_text, v_color, hint))
+
+    # «Хвост» 50% SKU
+    if   tail50_share <= TAIL_OK_PCT: v_text, v_color, hint = "норма","green","тонкий хвост — фокус на топ-SKU"
+    elif tail50_share <= 25:          v_text, v_color, hint = "внимание","yellow","умеренный хвост — мониторьте маржу и остатки"
+    else:                             v_text, v_color, hint = "риск", "red",  "толстый хвост — чистка/кластеризация промо"
+    rows.append(metric_row("Хвост 50% SKU", fmt_pct(tail50_share,1), v_text, v_color, hint))
+
+    metrics_list = dmc.Stack(gap=10, children=rows)
+   
+    metrics_scroll = dmc.ScrollArea(
+    h=120,  # фиксированная высота
+    type="scroll",  # показывать вертикальный скролл
+    offsetScrollbars=True,
+    children=metrics_list,
+    style={"paddingRight": "8px"}  # небольшой отступ, чтобы не обрезался скролл
+)
+
+    # 4) Короткие выводы (макс. 4)
+    bullets = []
+
+    # 1) Широта/раздутие — самое приоритетное
+    if n_items < LOW_W:
+        bullets.append("Ассортимент узкий — расширить 10–20 позиций в растущих категориях.")
+    elif n_items > HIGH_W:
+        if BLOATED:
+            bullets.append("Ассортимент раздут — убрать низкооборачиваемые и нулепродажные SKU, сократить дубли.")
+        else:
+            bullets.append("Широта выше среднего для данного уровня, но распределение здоровое — следим за дублями.")
+    else:
+        bullets.append("Широта ассортимента в норме для данного уровня.")
+
+
+    # 2) Концентрация по брендам
+    if own:
+        bullets.append("Собственный бренд — основной драйвер продаж, концентрация допустима."
+                    if top1_share >= TOP1_OK_IF_OWN
+                    else "Доля собственного бренда ниже целевой — усилить промо и дистрибуцию.")
+    else:
+        bullets.append("Высокая зависимость от одного бренда — добавить альтернативы."
+                    if (top1_share >= 45 or hhi >= HHI_HIGH)
+                    else "Концентрация по брендам сбалансирована.")
+
+    # 3) Хвост ассортимента
+    if tail50_share <= TAIL_OK_PCT:
+        bullets.append("Хвост тонкий — фокусируйтесь на топ-SKU и их наличиях.")
+    elif tail50_share >= 25:
+        bullets.append("Хвост длинный — проверьте эффективность слабых позиций.")
+    else:
+        bullets.append("Хвост сбалансирован, без явных рисков.")
+
+    # 4) HHI пояснение
+    if hhi > 50:
+        bullets.append(f"HHI {hhi:.1f} — {'монобрендовый ассортимент (норма для собственного бренда)' if own else 'высокая концентрация, риск зависимости'}.")
+    elif hhi < 15:
+        bullets.append(f"HHI {hhi:.1f} — низкая концентрация, структура диверсифицирована.")
+    else:
+        bullets.append(f"HHI {hhi:.1f} — умеренная концентрация, баланс фокуса и устойчивости.")
+
+    # максимум 4 пункта, по приоритету, как добавляли
+    bullets = bullets[:4]
+
+    assort_analysis = dmc.Stack(
+        gap=6,
+        children=[
+            status_banner,
+            dmc.List([dmc.ListItem(dmc.Text(x, size="sm")) for x in bullets], withPadding=True, spacing="xs"),
+        ],
+    )
+
+    # 5) Сборка карточки — без изменений
+    assort_card = section_card(
+        "Ассортимент",
+        dmc.Stack(gap="sm", children=[assort_text, metrics_scroll, dmc.Divider(variant="dashed"), assort_analysis]),
+        badge="Structure"
+    )
+
+
+
+
+
+    # ================== Итоговые блоки для «ровности» ==================
+    # ---- 1) общий helper для карточек фикс-высоты
+    EQUAL_CARD_H = 200  
+
+    def section_card_fixed(title: str, body, h: int = EQUAL_CARD_H, badge: str | None = None):
+        return dmc.Paper(
+            withBorder=True, radius="lg", shadow="sm", p="md",
+            # каркас одинаковой высоты
+            style={"height": h, "display": "flex", "flexDirection": "column"},
+            children=[
+                # шапка
+                dmc.Group(
+                    justify="space-between", align="center",
+                    children=[
+                        dmc.Text(title, fw=700, fz="md"),
+                        (dmc.Badge(badge, variant="outline", radius="xs") if badge else dmc.Box()),
+                    ],
+                ),
+                dmc.Divider(my=8, variant="dashed"),
+                # контентная область заполняет остаток
+                dmc.Box(
+                    style={"flex": "1 1 auto", "minHeight": 0},  # minHeight=0 позволяет ScrollArea занять место
+                    children=body,
+                ),
+            ],
+        )
+        
+
+    
+    # 1) Левая/правая колонка без индикаторов и без Парето
+    left_col = dmc.Stack(
+        gap="md",
+        children=[
+            section_card("KPI", kpis_grid, badge="Overview",),
+            # section_card("Ассортимент", dmc.Text(f"{n_items} номенклатур · {n_brand} брендов · {n_manu} производителей", size="sm", opacity=0.8)),
+            # assort_card,
+        ]
+    )
+
+    right_col = dmc.Stack(
+        gap="md",
+        children=[
+            new_block,
+        ]
+    )
+
+    # 2) Ряд с фикс-высотой: Индикаторы + Парето (ровно, одинаковая высота)
+    indicators_card = section_card_fixed_scroll("Индикаторы", indicators_body, h=300)
+
+    pareto_card = section_card_fixed("Парето 80/20", pareto_body, h=300)
+
+    analytics_row = dmc.SimpleGrid(
+        cols={"base": 1, "md": 2},
+        spacing="lg",
+        style={"alignItems": "stretch", "gridAutoRows": "1fr"},
+        children=[indicators_card, pareto_card],
+    )
+
+    # 3) Топы на всю ширину
+    top_brands_manus_fullwidth = dmc.SimpleGrid(
+        cols={"base": 1, "sm": 2},
+        spacing="md",
+        children=[
             section_card("Топ-бренды по выручке", dmc.List([dmc.ListItem(x) for x in brands_list], withPadding=True, size="sm")),
             section_card("Топ-производители по выручке", dmc.List([dmc.ListItem(x) for x in manus_list], withPadding=True, size="sm")),
-        ]),
-    ])
+        ],
+    )
 
-    return dmc.Stack(gap="md", children=[
-        dmc.Group(justify="space-between", align="center", children=[
-            dmc.Title("Быстрые выводы", order=4),
+    # ================== Хедер ==================
+    header = dmc.Group(
+        justify="space-between", align="center",
+        children=[
+            dmc.Group(gap="xs", align="center", children=[
+                DashIconify(icon="mdi:flash", width=22),
+                dmc.Title("Быстрые выводы", order=4),
+            ]),
             dmc.Badge("Аналитика ассортимента", variant="outline", radius="xs"),
-        ]),
-        dmc.SimpleGrid(cols={"base": 1, "md": 2}, spacing="lg", children=[left_col, right_col]),
-        sku_row,
-        extras_charts,
+        ]
+    )
 
-    ])
+    # ================== Return ==================
+    return dmc.Stack(
+        gap="md",
+        children=[
+            header,
+            dmc.SimpleGrid(cols={"base": 1, "md": 2}, spacing="lg", children=[left_col, right_col]),
+            assort_card,
+            analytics_row,  # ← Индикаторы + Парето ровной высоты
+            section_card("Рисковые SKU", dmc.Stack(gap=6, children=[quality_alert, dmc.List(risky_list, withPadding=True)])),
+            sku_row,
+            top_brands_manus_fullwidth,
+            extras_charts,
+        ],
+    )
+
+
+
 
 
 
@@ -1302,31 +1945,6 @@ class SegmentMainWindow:
                 for k in ("_count", "_amount"):
                     node.pop(k, None)
 
-        
-        
-        # def finalize(lst, parent_amount):
-        #     for node in lst:
-        #         amt = float(node.get("_amount", 0.0))
-        #         cnt = int(node.get("_count", 0))
-
-        #         # формируем подпись: "Название (₽1.2м • 5)"
-        #         parts = [f"₽{fmt_money(amt)}"]
-        #         if cnt:
-        #             parts.append(str(cnt))
-
-        #         node["label"] = f"{node['label']} ({' • '.join(parts)})"
-
-        #         # рекурсия по поддеревьям
-        #         if node.get("children"):
-        #             subs = [
-        #                 c for c in node["children"]
-        #                 if isinstance(c, dict) and "children" in c
-        #             ]
-        #             finalize(subs, amt if amt else None)
-
-        #         # удаляем служебные поля
-        #         for k in ("_count", "_amount"):
-        #             node.pop(k, None)
 
 
         finalize(tree, total_amount)
