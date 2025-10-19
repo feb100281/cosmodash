@@ -1,7 +1,7 @@
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 from dash import dcc, Input, Output, State, no_update
-from components import MonthSlider, DATES
+from components import MonthSlider, DATES, LoadingScreen
 import pandas as pd
 from data import load_df_from_redis, save_df_to_redis, delete_df_from_redis, load_sql_df
 from pages.dinamix.stores.layouts import StoresComponents
@@ -40,7 +40,8 @@ class StoreWindow:
                 self.last_update_lb,
                 dmc.Container(
                     id = self.data_conteiner_id,
-                    fluid=True
+                    fluid=True,
+                    children=[LoadingScreen().component]
                     ),
                 dcc.Store(id="store_dummy_imputs_for_slider"),
                 dcc.Store(id="store_dummy_imputs_for_render"),
