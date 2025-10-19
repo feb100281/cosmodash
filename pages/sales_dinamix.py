@@ -185,7 +185,7 @@ class Components:
             tab = 'general' if not recent_tab else recent_tab
             id = store_data["df_id"]
             from pages.dinamix.general.generaltab import layout as generaltab_layout
-            from pages.dinamix.stores.main import layout as storetab_layout
+            # from pages.dinamix.stores.main import layout as storetab_layout
             from pages.dinamix.cats.cattab import layout as cattab_layout
             from pages.dinamix.managers.managertab import layout as managertab_layout
 
@@ -201,7 +201,7 @@ class Components:
                         justify="right",
                     ),
                     dmc.TabsPanel(generaltab_layout(df_id=id), value="general"),
-                    dmc.TabsPanel(storetab_layout(df_id=id), value="stores"),
+                    # dmc.TabsPanel(storetab_layout(df_id=id), value="stores"),
                     dmc.TabsPanel(cattab_layout(), value="cats"),
                     dmc.TabsPanel(managertab_layout(), value="managers"),
                 ],
@@ -223,7 +223,7 @@ class Components:
 
         # Импортируем колбэки из страниц табов
         from pages.dinamix.general.generaltab import registed_callbacks as gt_callbacks
-        from pages.dinamix.stores.main import callbacks  
+        # from pages.dinamix.stores.main import callbacks  
         gt_callbacks(app)
-        callbacks.register_callbacks(app)
+        # callbacks.register_callbacks(app)
         
