@@ -5,6 +5,7 @@ from data import (
     save_df_to_redis,
     load_df_from_redis,
     delete_df_from_redis,
+    load_sql_df,
 )
 from dash.exceptions import PreventUpdate
 from datetime import datetime, date, timedelta
@@ -154,7 +155,7 @@ class Components:
 
                 delete_df_from_redis(store_data["df_id"])
 
-            df = load_columns_df(columns=COLS, start_eom=start, end_eom=end)
+            df = load_sql_df(start_eom=start, end_eom=end)
 
             df_id = save_df_to_redis(df, expire_seconds=1200)
 

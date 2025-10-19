@@ -241,6 +241,52 @@ cols = [
 ]
 
 
+def load_sql_df(start_eom,end_eom):
+    qs = f"""
+    SELECT 
+    s.date,
+    s.dt,
+    s.cr,
+    (s.dt - s.cr) AS amount,
+    coalesce(st.name,'Магазин не указан') AS store,
+    coalesce(sg.name,'Магазин не указан') AS store_gr_name,
+    coalesce(st.chanel,'Канал не указан') AS chanel,
+    mn.report_name AS manager,
+    an.report_name AS agent,
+    coalesce(parent.name,'Группа не указана') as parent,
+    coalesce(cat.name,'Категория не указана') AS cat,
+    coalesce(sc.name,'Подкатегория не указана') AS subcat,
+    s.client_order AS client_order,
+    (s.quant_dt - s.quant_cr) AS quant,
+    s.client_order_number AS client_order_number,
+    sg.region AS store_region,
+    s.quant_dt AS quant_dt,
+    s.quant_cr AS quant_cr,
+    i.fullname AS fullname,
+    m.name AS manu,
+    b.name AS brend
+FROM
+    sales_salesdata AS s
+        LEFT JOIN
+    corporate_stores AS st ON st.id = s.store_id
+    left join corporate_storegroups as sg on sg.id = st.gr_id
+    left join corporate_managers as mn on mn.id = s.manager_id
+    left join corporate_agents as an on an.id = s.agent_id
+    left join corporate_items as i on i.id = s.item_id
+    left join corporate_itembrend as b on b.id = i.brend_id
+    left join corporate_itemmanufacturer as m on m.id = i.manufacturer_id
+    left join corporate_cattree as cat on cat.id = i.cat_id
+    left join corporate_cattree as parent on parent.id = cat.parent_id
+    left join corporate_subcategory as sc on sc.id = i.subcat_id
+    where date between '{start_eom}' and '{end_eom}'   
+    
+    """
+    df = pd.read_sql(qs,ENGINE)
+    
+    df['eom'] = pd.to_datetime(df.date) + pd.offsets.MonthEnd(0)
+    return df
+
+
 def to_str_date(d):
     if isinstance(d, str):
         return d

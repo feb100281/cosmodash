@@ -15,7 +15,6 @@ FLASK_SESSION_SECRET = os.getenv("FLASK_SESSION_SECRET")
 app = main_app()
 app.server.secret_key = FLASK_SESSION_SECRET  
 
-
 app.server.config.update(
     JSONIFY_TIMEOUT=30,
     SEND_FILE_MAX_AGE_DEFAULT=3600,
@@ -24,7 +23,6 @@ app.server.config.update(
     SESSION_COOKIE_SECURE=False,  # True если используете HTTPS
     SESSION_REFRESH_EACH_REQUEST=True
 )
-
 
 @app.server.before_request
 def check_key():
