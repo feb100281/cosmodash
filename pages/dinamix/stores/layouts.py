@@ -6,7 +6,7 @@ from dash.exceptions import PreventUpdate
 from decimal import Decimal, ROUND_HALF_UP
 import dash_ag_grid as dag
 
-
+ 
 import dash
 from dash import (
     dcc, html, Input, Output, State, ALL,

@@ -242,6 +242,8 @@ cols = [
 
 
 def load_sql_df(start_eom,end_eom):
+    sd:pd.Timestamp = pd.to_datetime(start_eom) + pd.offsets.MonthBegin(-1)
+    sd = sd.strftime('%Y-%m-%d')
     qs = f"""
     SELECT 
     s.date,
@@ -278,7 +280,7 @@ FROM
     left join corporate_cattree as cat on cat.id = i.cat_id
     left join corporate_cattree as parent on parent.id = cat.parent_id
     left join corporate_subcategory as sc on sc.id = i.subcat_id
-    where date between '{start_eom}' and '{end_eom}'   
+    where date between '{sd}' and '{end_eom}'   
     
     """
     df = pd.read_sql(qs,ENGINE)

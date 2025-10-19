@@ -33,6 +33,7 @@ from pages.summary import SummaryComponents
 from pages.sales_dinamix import Components as sd_components
 from pages.segment_analisis import SEGMENTS_LAYOUT, SEGMENT_DF_STORE, SEGMENTS_CALLBACKS
 from pages.planing import PLANING
+from pages.stores_page import STORES
 from components import NoData, InDevNotice, ClickOnNotice
 from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
 
@@ -159,11 +160,17 @@ class MainWnidow:
                                 active='exact',
                                 leftSection=DashIconify(icon='vaadin:line-bar-chart',width=16)
                                 ),
+                    dmc.NavLink(label="Магазины", 
+                                href="/Stores", 
+                                active='exact',
+                                description = 'Динамика и аналитика по магазинам', 
+                                leftSection=DashIconify(icon='streamline-freehand:shop-open',width=16)
+                                ),
                     dmc.NavLink(label="Сегменты", 
                                 href="/Segments", 
                                 active='exact',
                                 description = 'Сегментный анализ и аналитика', 
-                                leftSection=DashIconify(icon='fluent-emoji-high-contrast:puzzle-piece',width=16)
+                                leftSection=DashIconify(icon='fluent-emoji-high-contrast:puzzle-piece',width=16)                                
                                 ),
                     dmc.NavLink(label="Матрица", 
                                 href="/Matrix", 
@@ -185,10 +192,10 @@ class MainWnidow:
             dmc.AppShellMain([page_container,
                               html.Div(id="dummy-theme-output", style={"display": "none"}),                              
                               sd_components().df_store,                              
-                              dcc.Store(id='pdf_download', storage_type='memory'),
+                              dcc.Store(id='pdf_download', storage_type='memory'),                              
                               PREVIEW_MODAL,
                               SEGMENT_DF_STORE,
-                                                         
+                              dcc.Store(id=STORES.df_store_id, storage_type='memory')                                                         
                               ]),
         ],
             header={"height": 60},
@@ -288,11 +295,13 @@ def main_app():
     sd_components().register_callbacks(app)
     SEGMENTS_CALLBACKS.register_callbacks(app)
     PLANING.registered_callbacks(app)
+    STORES.reistered_callbacks(app)
     preview_callbacks(app)
     # print(app.callback_map.keys())
 
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
+    dash.register_page("Магазины", path="/Stores", layout=STORES.make_layout())
     dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
     dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
     dash.register_page("Планирование", path="/forecast", layout=PLANING.layout())
