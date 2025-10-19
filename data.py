@@ -19,6 +19,11 @@ r = redis.Redis(
     db=os.getenv("REDIS_DB"),
     password=os.getenv("REDIS_PASSWORD"),
     decode_responses=False,
+    socket_connect_timeout=30,      # Таймаут подключения
+    socket_timeout=30,              # Таймаут операций
+    retry_on_timeout=True,          # Повтор при таймауте
+    max_connections=50,             # Больше соединений
+    health_check_interval=30,       # Проверка здоровья
 )
 
 # подключаем к базе данных
