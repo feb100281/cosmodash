@@ -279,7 +279,8 @@ def main_app():
         pages_folder="",          
         title="Панель продаж",
         suppress_callback_exceptions=True,
-        external_scripts=scripts
+        external_scripts=scripts,
+        
     )
     
 
@@ -298,11 +299,18 @@ def main_app():
 
     app.layout = MainWnidow().page_layout
     
+    server = app.server
+    server.config['JSONIFY_TIMEOUT'] = 30
+    server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
+    
     
     
 
     return app
 
 if __name__ == "__main__":
-    main_app().run(debug=True, port=8050)
-
+    main_app().run(
+        debug=True, 
+        port=8050,
+        threaded=True  # Добавить многопоточность
+    )

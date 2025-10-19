@@ -15,6 +15,17 @@ FLASK_SESSION_SECRET = os.getenv("FLASK_SESSION_SECRET")
 app = main_app()
 app.server.secret_key = FLASK_SESSION_SECRET  
 
+
+app.server.config.update(
+    JSONIFY_TIMEOUT=30,
+    SEND_FILE_MAX_AGE_DEFAULT=3600,
+    PERMANENT_SESSION_LIFETIME=1800,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=False,  # True если используете HTTPS
+    SESSION_REFRESH_EACH_REQUEST=True
+)
+
+
 @app.server.before_request
 def check_key():
     protected_pages = ('/', '/Sales_dimamix', '/Segments', '/Matrix')
@@ -40,4 +51,10 @@ def check_key():
 server = app.server
 
 if __name__ == "__main__":
-    app.run(debug=False, host='0.0.0.0', port=8050)
+    app.run(
+        debug=False, 
+        host='0.0.0.0', 
+        port=8050,
+        threaded=True,      # Многопоточность для параллельных запросов
+        processes=1         # Один процесс для стабильности
+    )
