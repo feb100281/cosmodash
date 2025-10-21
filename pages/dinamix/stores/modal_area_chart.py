@@ -18,6 +18,7 @@ from components import (
     COLORS_BY_COLOR,
     COLORS_BY_SHADE,
     InDevNotice,
+    CsvAGgridDownloader
 )
 from data import (
     load_columns_df,
@@ -42,6 +43,7 @@ class StoreAreaChartModal:
         self.container_id = {"type": "store_area_chart_modal_container", "index": "1"}
         self.inner_container_id = {"type": "store_area_chart_modal_inner", "index": "1"}
         self.metric_id = {"type": "store_area_chart_metric", "index": "1"}
+        self.ag_dln_id = {"type":"stores_ag_downloader_id","index":"1"}
 
     # ---------- Публичный API ----------
     def create_components(self):
@@ -519,21 +521,7 @@ class StoreAreaChartModal:
             ],
             gap="xs",
         )
-    
-    
-    
-    
-    
-    
-
-
-
-
-
-
-
-    
-    
+        
     # ---------- Таблица ----------
     def _table_block(self, df_scope: pd.DataFrame):
         eom = df_scope["eom"].max()
@@ -654,7 +642,7 @@ class StoreAreaChartModal:
                 ], justify="space-between"),
 
                 dcc.Store(id=store_id, data=tx.to_dict("records")),
-
+                CsvAGgridDownloader(self.ag_dln_id).dnl_button,
                 dag.AgGrid(
                     id=grid_id,
                     rowData=tx.to_dict("records"),
@@ -677,6 +665,9 @@ class StoreAreaChartModal:
                     },
                     style={"height": "520px", "width": "100%"},
                     className="ag-theme-alpine",
+                    csvExportParams={
+                        "fileName": "Данные.csv",
+                    },
                 ),
             ], gap="sm"),
         )
@@ -887,7 +878,17 @@ class StoreAreaChartModal:
             return "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
 
 
-
+        @app.callback(
+            Output(grid_id, "exportDataAsCsv"),
+            Input(self.ag_dln_id, "n_clicks"),
+            prevent_initial_call=False,
+        )
+        def dnl_ag(n_clicks):
+            if n_clicks:
+                return True
+            return False
+            
+        
 
 
 

@@ -499,3 +499,24 @@ class DownLoadMenu:
                 self.dnl_menu,
             ],
         )
+
+
+class CsvAGgridDownloader():
+    def __init__(self, id):
+        self.bnt_icon = "vscode-icons:file-type-excel2"
+        self.title = "Загрузить CSV"
+        self.id = id
+        
+    
+    @property
+    def dnl_button(self):
+        return dmc.Button(
+                        self.title,
+                        id=self.id,                        
+                        leftSection=DashIconify(icon=self.bnt_icon, width=18),
+                        variant="subtle",
+                        color="blue",
+                        fullWidth=True,
+                        size="xs",
+                        justify="flex-start",
+                    )
