@@ -5,6 +5,8 @@ import numpy as np
 from dash.exceptions import PreventUpdate
 from decimal import Decimal, ROUND_HALF_UP
 import dash_ag_grid as dag
+import plotly.graph_objects as go
+from .query import get_days_heatmap
 
  
 import dash
@@ -22,6 +24,10 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 from components import NoData, BASE_COLORS, COLORS_BY_SHADE
 from data import load_df_from_redis
 from .modal_area_chart import StoreAreaChartModal
+
+
+
+from calendar import monthrange
 
 
 
@@ -82,6 +88,255 @@ def delta_node(curr, prev, good_when_up=True, as_pct=True, w=110, ta="left", kin
     return dmc.Text(f"{arrow_char} {txt}", c=color, ta=ta, w=w, ff="tabular-nums")
 
 
+        
+
+
+
+
+# def build_month_day_heatmap(
+#     df_daily: pd.DataFrame,
+#     metric: str,
+#     d1: pd.Timestamp | str | None = None,
+#     d2: pd.Timestamp | str | None = None,
+#     months: list[str] | list[pd.Timestamp] | None = None,   # ← если используешь MonthPicker
+#     use_full_months: bool = True,                            # ← разворачивать до целых месяцев
+#     show_zeros: bool = True,                                 # ← подписывать нули или оставлять пусто
+# ):
+   
+#     if df_daily is None or df_daily.empty or metric not in df_daily.columns:
+#         return None, "Нет данных для построения теплокарты."
+
+#     d = df_daily.copy()
+#     d["date"] = pd.to_datetime(d.get("date"), errors="coerce").dt.normalize()
+
+#     # ---- Определяем период ----
+#     if months:
+#         m = pd.to_datetime(pd.Series(months), errors="coerce").dropna().dt.to_period("M")
+#         if m.empty:
+#             return None, "Список месяцев пуст."
+#         start = m.min().start_time   # 1-е число минимального месяца (00:00)
+#         end   = m.max().end_time     # последний день максимального месяца (23:59:59...)
+#     else:
+#         if d1 is None or d2 is None:
+#             return None, "Не задан период (d1/d2 или months)."
+#         start = pd.to_datetime(d1)
+#         end   = pd.to_datetime(d2)
+#         if use_full_months:
+#             start = start.to_period("M").start_time  # вместо .to_timestamp("MS")
+#             end   = end.to_period("M").end_time      # вместо .to_timestamp("M")
+
+
+#     if pd.isna(start) or pd.isna(end) or start > end:
+#         return None, "Неверные границы периода."
+
+#     # ---- Фильтр данных ----
+#     d = d.loc[(d["date"] >= start) & (d["date"] <= end)]
+#     if d.empty:
+#         return None, "В выбранном диапазоне нет данных."
+
+#     # ---- Ежедневная агрегация ----
+#     g = (d.groupby("date", as_index=False)[metric]
+#            .sum()
+#            .sort_values("date"))
+
+#     # ---- Признаки месяца/дня ----
+#     g["month"] = g["date"].dt.to_period("M")
+#     g["month_label"] = g["month"].dt.strftime("%Y-%m")
+#     g["day"] = g["date"].dt.day
+
+#     # ---- Полная сетка месяцев и дней ----
+#     # все месяцы в диапазоне
+#     months_range = pd.period_range(start.to_period("M"), end.to_period("M"), freq="M")
+#     month_labels = months_range.strftime("%Y-%m").tolist()
+#     # колонки дней 1..31 (потом пустые дни в коротких месяцах останутся NaN)
+#     day_cols = list(range(1, 32))
+
+#     pivot:pd.DataFrame = (g.pivot_table(index="month_label", columns="day", values=metric, aggfunc="sum")
+#                .reindex(index=month_labels)  # гарантируем все месяцы
+#                .reindex(columns=day_cols)    # гарантируем 1..31
+#             )
+
+#     # ---- Тексты в ячейках ----
+#     # пишем целые суммы; для NaN — пусто; для 0 — либо "0", либо пусто (по флагу)
+#     z = pivot.values.astype(float)
+#     text = []
+#     for r in range(z.shape[0]):
+#         row_txt = []
+#         # считаем реальное число дней в месяце, чтобы визуально "мёртвые" дни (30→31, февраль) оставлять пустыми
+#         year, month = map(int, pivot.index[r].split("-"))
+#         max_day = monthrange(year, month)[1]
+#         for c in range(z.shape[1]):
+#             val = z[r, c]
+#             day = c + 1
+#             if day > max_day:
+#                 row_txt.append("")  # несуществующий день
+#             elif np.isnan(val):
+#                 row_txt.append("")
+#             elif val == 0 and not show_zeros:
+#                 row_txt.append("")
+#             else:
+#                 row_txt.append(f"{int(round(val))}")
+#         text.append(row_txt)
+
+#     # ---- Heatmap с подписями ----
+#     fig = go.Figure(data=go.Heatmap(
+#         z=z,
+#         x=day_cols,
+#         y=month_labels,
+#         text=text,
+#         texttemplate="%{text}",
+#         textfont={"size": 10},
+#         hovertemplate="Месяц: %{y}<br>День: %{x}<br>Сумма: %{z:.0f}<extra></extra>",
+#         colorbar=dict(title=metric),
+#         zmin=np.nanmin(z) if np.isfinite(np.nanmin(z)) else 0,
+#         zmax=np.nanmax(z) if np.isfinite(np.nanmax(z)) else 1,
+#         colorscale="Blues",
+#         showscale=True,
+#         xgap=1, ygap=1
+#     ))
+
+#     fig.update_layout(
+#         height=max(360, 28 * len(month_labels) + 80),
+#         margin=dict(l=60, r=20, t=20, b=40),
+#         xaxis_title="День месяца",
+#         yaxis_title="Месяц",
+#     )
+#     fig.update_xaxes(type="category")
+#     return fig, None
+
+
+
+
+# def build_month_day_heatmap(
+#     df_daily: pd.DataFrame,
+#     metric: str,
+#     months_list: list[str] | list[pd.Timestamp] | None = None,  # опционально: заранее заданные месяцы
+#     show_zeros: bool = True,                                    # показывать ли нули в подписях
+#     tz: str = "Europe/Amsterdam",                               # для "текущего" месяца
+# ):
+
+#     # --- валидация ---
+#     if df_daily is None or df_daily.empty or metric not in df_daily.columns:
+#         return None, "Нет данных или отсутствует указанный metric."
+
+#     d = df_daily.copy()
+#     d["date"] = pd.to_datetime(d.get("date"), errors="coerce")
+#     d = d.dropna(subset=["date"])
+#     d["date"] = d["date"].dt.normalize()
+
+#     # --- определяем 13 месяцев ---
+#     if months_list:
+#         m = pd.to_datetime(pd.Series(months_list), errors="coerce").dropna().dt.to_period("M")
+#         if m.empty:
+#             return None, "Список месяцев пуст."
+#         # берём min..max из списка и проверяем, что влезает ровно 13 (если нет — расширяем/урезаем)
+#         start_m, end_m = m.min(), m.max()
+#         months_range = pd.period_range(start_m, end_m, freq="M")
+#         # форсируем длину 13 — расширяя назад или урезая справа
+#         if len(months_range) < 13:
+#             deficit = 13 - len(months_range)
+#             start_m = (start_m - deficit)
+#             months_range = pd.period_range(start_m, end_m, freq="M")
+#         elif len(months_range) > 13:
+#             months_range = months_range[-13:]  # последние 13
+#     else:
+#         now = pd.Timestamp.now(tz=tz).to_period("M")
+#         months_range = pd.period_range(now - 12, now, freq="M")  # 12 назад + текущий = 13
+
+#     # абсолютные границы по датам
+#     start = months_range[0].start_time
+#     end   = months_range[-1].end_time
+
+#     # --- фильтр и агрегация по дням ---
+#     d = d[(d["date"] >= start) & (d["date"] <= end)]
+#     if d.empty:
+#         return None, "В выбранном диапазоне нет данных."
+
+#     # Если в df не строго по каждому дню, агрегируем по дате
+#     g = (d.groupby("date", as_index=False)[metric]
+#            .sum()
+#            .sort_values("date"))
+
+#     # --- подготовка признаков ---
+#     g["month_p"] = g["date"].dt.to_period("M")
+#     g["month_label"] = g["month_p"].dt.strftime("%Y-%m")
+#     g["day"] = g["date"].dt.day
+
+#     # --- шкалы осей ---
+#     x_months = months_range.strftime("%Y-%m").tolist()  # 13 месяцев слева-направо
+#     y_days = list(range(1, 32))                         # 1..31 сверху-вниз
+
+#     # --- формируем сводную таблицу: строки = дни, колонки = месяцы ---
+#     pivot = (
+#         g.pivot_table(index="day", columns="month_label", values=metric, aggfunc="sum")
+#          .reindex(index=y_days)
+#          .reindex(columns=x_months)
+#     )
+
+#     # --- текст в ячейках и маскирование несуществующих дней ---
+#     # Оставляем NaN для несуществующих дней, чтобы они были "пустыми" на теплокарте
+#     z = pivot.values.astype(float)
+#     text = [["" for _ in x_months] for __ in y_days]
+
+#     # предвычислим макс. дни по каждому месяцу
+#     max_days_by_col = []
+#     for mlab in x_months:
+#         year, month = map(int, mlab.split("-"))
+#         max_days_by_col.append(monthrange(year, month)[1])
+
+#     for r, day in enumerate(y_days):
+#         for c, mlab in enumerate(x_months):
+#             val = z[r, c]
+#             max_day = max_days_by_col[c]
+#             if day > max_day or np.isnan(val):
+#                 text[r][c] = ""
+#             elif (val == 0) and (not show_zeros):
+#                 text[r][c] = ""
+#             else:
+#                 # округляем до целого, при желании можно подключить форматер
+#                 text[r][c] = f"{int(round(val))}"
+
+#     # --- границы шкалы (robust) ---
+#     finite_vals = z[np.isfinite(z)]
+#     zmin = float(np.nanmin(finite_vals)) if finite_vals.size else 0.0
+#     zmax = float(np.nanmax(finite_vals)) if finite_vals.size else 1.0
+#     if zmin == zmax:
+#         zmax = zmin + 1.0
+
+#     # --- строим график ---
+#     fig = go.Figure(
+#         data=go.Heatmap(
+#             z=z,
+#             x=x_months,
+#             y=y_days,
+#             text=text,
+#             texttemplate="%{text}",
+#             textfont={"size": 10},
+#             hovertemplate="Месяц: %{x}<br>День: %{y}<br>Сумма: %{z:.0f}<extra></extra>",
+#             colorbar=dict(title=metric),
+#             zmin=zmin,
+#             zmax=zmax,
+#             colorscale="Viridis",  # хорошо читается и на тёмной, и на светлой теме
+#             showscale=True,
+#             xgap=1,
+#             ygap=1,
+#         )
+#     )
+
+#     # дни сверху-вниз (1 вверху)
+#     fig.update_yaxes(autorange="reversed", title_text="День месяца", tickmode="array", tickvals=y_days)
+#     fig.update_xaxes(title_text="Месяц", type="category")
+
+#     # размеры: 31 строки * ~20px + отступы; 13 колонок * ~60px
+#     fig.update_layout(
+#         height=max(520, 20 * len(y_days) + 100),
+#         width=max(900, 60 * len(x_months) + 160),
+#         margin=dict(l=70, r=30, t=20, b=60),
+#     )
+
+#     return fig, None
+
+
 
 class StoresComponents:
     def __init__(self, df_id=None, period_label: str | None = None):
@@ -113,6 +368,9 @@ class StoresComponents:
         
 
         self.period_total_badge_id = {'type': 'period_total_badge', 'index': '1'}
+        
+        self.month_day_heatmap_wrap_id = "month_day_heatmap_wrap"
+
  
 
     # ======================= COMPONENTS =======================
@@ -512,8 +770,6 @@ class StoresComponents:
         
         
         def heatmap_period_block():
-            import pandas as pd
-
             data_min = pd.to_datetime(df_data['date'].min()).normalize()
             data_max = pd.to_datetime(df_data['date'].max()).normalize()
 
@@ -687,6 +943,10 @@ class StoresComponents:
                 data=tmp[wanted].to_dict('records'),
                 storage_type='memory'
             )
+            
+            
+
+
 
         # ---- right drawer (отчёт)
         def report_drawer():
@@ -1330,7 +1590,36 @@ class StoresComponents:
 
 
 
-            
+        def month_day_heatmap_block():
+            return dmc.Paper(
+                withBorder=True, radius="md", p="md", shadow="sm",
+                children=[
+                    dmc.Group(
+                        justify="space-between", align="center", wrap="wrap", gap="sm",
+                        children=[
+                            dmc.Group(
+                                gap="xs", align="center",
+                                children=[
+                                    DashIconify(icon="tabler:calendar-month", width=18),
+                                    dmc.Text("Календарь по дням месяца", fw=700),
+                                ],
+                            ),
+                            dmc.Badge("Агрегация: месяц × день", variant="outline", radius="xs", size="md",id='very_unique_badge_st_gr_name'),
+                        ],
+                    ),
+                    dmc.Space(h=6),
+                    dcc.Loading(
+                        type="circle",
+                        children=dcc.Graph(
+                            id=self.month_day_heatmap_wrap_id,
+                            config={"displayModeBar": False},
+                            
+                            
+                        ),
+                    ),
+                ],
+            )
+
 
 
 
@@ -1359,7 +1648,8 @@ class StoresComponents:
             returns_modal,
             store_full_df_for_returns(),
             heatmap_period_block(),   
-            store_daily_scope(),    
+            store_daily_scope(),  
+            month_day_heatmap_block(),  
 
         )
     
@@ -1372,7 +1662,7 @@ class StoresComponents:
     def tab_layout(self):
         if not self.df_id:
             return NoData().component
-        filter_store, raw_store, controls, chart, report_drawer, memo, returns_modal, df_returns_store, heatmap_block, daily_store = self.create_components()
+        filter_store, raw_store, controls, chart, report_drawer, memo, returns_modal, df_returns_store, heatmap_block, daily_store, month_day_heatmap_block = self.create_components()
         return dmc.Container(
             fluid=True,
             children=[
@@ -1381,6 +1671,9 @@ class StoresComponents:
                 memo,
                 dmc.Space(h=10),
                 heatmap_block,
+                
+                dmc.Space(h=10),
+                month_day_heatmap_block,
                 dmc.Grid(
                     gutter="lg", align="stretch",
                     children=[
@@ -2996,6 +3289,32 @@ class StoresComponents:
         def toggle_theme_heatmap_drilldown(checked):
             # та же логика темы
             return "ag-theme-alpine-dark" if checked else "ag-theme-alpine"
+        
+        
+        
+
+
+        @app.callback(
+            Output(self.month_day_heatmap_wrap_id, "figure"),
+            Output('very_unique_badge_st_gr_name','children'),
+            Input(self.store_multyselect_id,'value'),
+            Input('store_df_store','data'),
+            # State('store_df_store','data'),            
+            prevent_initial_call=False,                 
+        )
+        def render_month_day_heatmap(val, data):
+            
+            start = data['start']
+            end = data['end']
+            fig, title = get_days_heatmap(start,end,val)
+            return fig, title
+            
+        
+        
+        
+        
+        
+        
         
 
 

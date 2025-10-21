@@ -335,6 +335,7 @@ def insights_block(
     agent_share: float,
     selected_category: Optional[str] = None,
     yaxis_max: Optional[float] = None,
+    selected_month_end: Optional[pd.Timestamp] = None,
 ):
     d = df.copy()
 
@@ -500,6 +501,83 @@ def insights_block(
         d = d.loc[d[cat_col].astype(str) == str(selected_category)].copy()
 
     # ================== Новые номенклатуры (30 дней) ==================
+    # new_block = dmc.Box()
+    # new_items_cnt = 0
+    # new_amount_sum = 0.0
+
+    # if (init_col is not None and init_col in d.columns and
+    #     date_col is not None and date_col in d.columns and
+    #     full_col is not None and full_col in d.columns and
+    #     not d.empty):
+
+    #     max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
+    #     if pd.notna(max_sel_date):
+    #         window_start = max_sel_date - pd.Timedelta(days=30)
+    #         new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
+    #         d_new = d.loc[new_mask].copy()
+
+    #         if not d_new.empty:
+    #             new_items_cnt  = int(d_new[full_col].nunique())
+    #             new_amount_sum = float(d_new["amount"].sum())
+
+    #             g_new = (d_new.groupby(full_col, as_index=False)
+    #                         .agg(amount=("amount", "sum"),
+    #                              quant =("quant",  "sum"))
+    #                         .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
+    #                         .sort_values("amount", ascending=False))
+
+    #             def item_two_lines(i, name, q, a, p):
+    #                 top = dmc.Text(f"{i}. {name}", size="sm", lineClamp=1, style={"minWidth": 0})
+    #                 q_txt = f"{int(round(q))} шт" if pd.notna(q) else "— шт"
+    #                 a_txt = fmt_compact(a, money=True)
+    #                 p_txt = f"~{fmt_compact(p, money=True)}/ед" if pd.notna(p) and p > 0 else "~—/ед"
+    #                 bottom = dmc.Text(f"Продано: {q_txt} · {a_txt} · {p_txt}", size="xs", c="dimmed", style={"fontStyle": "italic"})
+    #                 return dmc.ListItem(dmc.Stack(gap=2, children=[top, bottom]))
+
+    #             new_items = [
+    #                 item_two_lines(i, getattr(r, full_col), float(r.quant), float(r.amount),
+    #                                (float(r.price) if pd.notna(r.price) else None))
+    #                 for i, r in enumerate(g_new.itertuples(index=False), start=1)
+    #             ]
+
+    #             header_row = dmc.Group(
+    #                 justify="space-between", align="center",
+    #                 children=[
+    #                     dmc.Group(gap="xs", align="center", children=[
+    #                         dmc.Badge(f"{new_items_cnt} новых SKU", variant="light", color="teal", radius="sm"),
+    #                         dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}", variant="outline", color="blue", radius="sm"),
+    #                     ]),
+    #                     dmc.Text(f"{window_start:%d.%m.%Y} — {max_sel_date:%d.%m.%Y}", size="xs", c="dimmed"),
+    #                 ]
+    #             )
+
+    #             new_block = section_card(
+    #                 "Новые номенклатуры (за 30 дней)",
+    #                 dmc.Stack(
+    #                     gap=6,
+    #                     children=[
+    #                         header_row,
+    #                         dmc.ScrollArea(
+    #                             type="auto", scrollbarSize=8, h=160,
+    #                             styles={"viewport": {"overflowX": "hidden"}},
+    #                             children=dmc.List(new_items, withPadding=True, size="sm", spacing="xs"),
+    #                         ),
+    #                     ],
+    #                 ),
+    #                 badge="Fresh"
+    #             )
+    #         else:
+    #             new_block = section_card(
+    #                 "Новые номенклатуры (за 30 дней)",
+    #                 dmc.Alert("За выбранный период новых SKU не появилось.", color="gray", variant="light", radius="sm")
+    #             )
+    # else:
+    #     new_block = section_card(
+    #         "Новые номенклатуры (за 30 дней)",
+    #         dmc.Alert("Колонка init_date не найдена — невозможно определить новые SKU.", color="gray", variant="light", radius="sm")
+    #     )
+    
+    # === Новые номенклатуры (последние 30 дней от EOM) ===
     new_block = dmc.Box()
     new_items_cnt = 0
     new_amount_sum = 0.0
@@ -509,33 +587,45 @@ def insights_block(
         full_col is not None and full_col in d.columns and
         not d.empty):
 
-        max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
-        if pd.notna(max_sel_date):
-            window_start = max_sel_date - pd.Timedelta(days=30)
-            new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
+        # Определяем конец выбранного месяца (EOM)
+        if selected_month_end is not None:
+            eom = pd.to_datetime(selected_month_end, errors="coerce")
+            eom = eom.to_period("M").to_timestamp("M") if pd.notna(eom) else pd.NaT
+        else:
+            max_in_df = pd.to_datetime(d[date_col].max(), errors="coerce")
+            eom = max_in_df.to_period("M").to_timestamp("M") if pd.notna(max_in_df) else pd.NaT
+
+        if pd.notna(eom):
+            # Ровно 30 календарных дней включительно: [EOM-29d; EOM]
+            window_start = eom - pd.Timedelta(days=29)
+            new_mask = d[init_col].between(window_start, eom, inclusive="both")
             d_new = d.loc[new_mask].copy()
 
             if not d_new.empty:
                 new_items_cnt  = int(d_new[full_col].nunique())
                 new_amount_sum = float(d_new["amount"].sum())
 
-                g_new = (d_new.groupby(full_col, as_index=False)
-                            .agg(amount=("amount", "sum"),
-                                 quant =("quant",  "sum"))
-                            .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
-                            .sort_values("amount", ascending=False))
+                g_new = (
+                    d_new.groupby(full_col, as_index=False)
+                        .agg(amount=("amount", "sum"), quant=("quant", "sum"))
+                        .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
+                        .sort_values("amount", ascending=False)
+                )
 
                 def item_two_lines(i, name, q, a, p):
                     top = dmc.Text(f"{i}. {name}", size="sm", lineClamp=1, style={"minWidth": 0})
                     q_txt = f"{int(round(q))} шт" if pd.notna(q) else "— шт"
                     a_txt = fmt_compact(a, money=True)
                     p_txt = f"~{fmt_compact(p, money=True)}/ед" if pd.notna(p) and p > 0 else "~—/ед"
-                    bottom = dmc.Text(f"Продано: {q_txt} · {a_txt} · {p_txt}", size="xs", c="dimmed", style={"fontStyle": "italic"})
+                    bottom = dmc.Text(
+                        f"Продано: {q_txt} · {a_txt} · {p_txt}",
+                        size="xs", c="dimmed", style={"fontStyle": "italic"}
+                    )
                     return dmc.ListItem(dmc.Stack(gap=2, children=[top, bottom]))
 
                 new_items = [
                     item_two_lines(i, getattr(r, full_col), float(r.quant), float(r.amount),
-                                   (float(r.price) if pd.notna(r.price) else None))
+                                (float(r.price) if pd.notna(r.price) else None))
                     for i, r in enumerate(g_new.itertuples(index=False), start=1)
                 ]
 
@@ -546,12 +636,12 @@ def insights_block(
                             dmc.Badge(f"{new_items_cnt} новых SKU", variant="light", color="teal", radius="sm"),
                             dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}", variant="outline", color="blue", radius="sm"),
                         ]),
-                        dmc.Text(f"{window_start:%d.%m.%Y} — {max_sel_date:%d.%m.%Y}", size="xs", c="dimmed"),
+                        dmc.Text(f"{window_start:%d.%m.%Y} — {eom:%d.%m.%Y}", size="xs", c="dimmed"),
                     ]
                 )
 
                 new_block = section_card(
-                    "Новые номенклатуры (за 30 дней)",
+                    "Новые номенклатуры (за последние 30 дней от EOM)",
                     dmc.Stack(
                         gap=6,
                         children=[
@@ -567,14 +657,23 @@ def insights_block(
                 )
             else:
                 new_block = section_card(
-                    "Новые номенклатуры (за 30 дней)",
-                    dmc.Alert("За выбранный период новых SKU не появилось.", color="gray", variant="light", radius="sm")
+                    "Новые номенклатуры (за последние 30 дней от EOM)",
+                    dmc.Alert(
+                        f"За период {window_start:%d.%m.%Y}—{eom:%d.%m.%Y} новых SKU не появилось.",
+                        color="gray", variant="light", radius="sm"
+                    )
                 )
+        else:
+            new_block = section_card(
+                "Новые номенклатуры (за последние 30 дней от EOM)",
+                dmc.Alert("Не удалось определить конец месяца для слайдера.", color="gray", variant="light", radius="sm")
+            )
     else:
         new_block = section_card(
-            "Новые номенклатуры (за 30 дней)",
+            "Новые номенклатуры (за последние 30 дней от EOM)",
             dmc.Alert("Колонка init_date не найдена — невозможно определить новые SKU.", color="gray", variant="light", radius="sm")
         )
+
 
     # ================== Сводные числа ==================
     n_items = int(d[full_col].nunique()) if full_col in d.columns else 0
@@ -2145,13 +2244,12 @@ class SegmentMainWindow:
             State(self.df_store_id, "data"),
             prevent_initial_call=True,
         )
-        def get_data(checked,  theme, store_data):
+        def get_data(checked, theme, store_data):
             if not checked:
                 return  empty_placeholder(), True, True, True
 
             rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
-            
-            md = get_items(checked,store_data['start'],store_data['end'])
+            md = get_items(checked, store_data['start'], store_data['end'])
 
             agent_summary = fletch_agents(checked, store_data['start'], store_data['end'])
             store_summary = fletch_stores(checked, store_data['start'], store_data['end'])
@@ -2160,22 +2258,22 @@ class SegmentMainWindow:
             dfa = dfa.pivot_table(index='agent_sales', values='amount', aggfunc='sum').reset_index()
             agent_share = dfa[dfa['agent_sales'] == 'Через дизайнера']['amount'].sum() / dfa['amount'].sum() * 100 if dfa['amount'].sum() > 0 else 0.0
 
-    
-            # kpi = build_kpi(md, compact=bool(compact_on))
-
             details = dmc.Stack(
                 [
-                    insights_block(md, store_data['tot_revenue'],agent_share),
+                    insights_block(
+                        md,
+                        store_data['tot_revenue'],
+                        agent_share,
+                        selected_month_end=pd.to_datetime(store_data['end'])  # <— ключевое
+                    ),
                     pareto_block(md),    
                     stores_block(store_summary),
                     self.update_ag(md, rrgrid_className),
-                   
-                    
                 ],
                 gap="md",
             )
 
-            return  details, False, False, False
+            return details, False, False, False
 
         #Вызываем управление категорями
         @app.callback(
