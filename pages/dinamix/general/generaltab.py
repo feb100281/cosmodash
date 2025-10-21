@@ -37,7 +37,7 @@ import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
-from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice, DownLoadMenu, LoadingScreen
+from components import ValuesRadioGroups, DATES, NoData, month_str_to_date,InDevNotice,ClickOnNotice, DownLoadMenu, LoadingScreen, CsvAGgridDownloader
 from data import (
     load_df_from_redis,
     load_columns_dates,
@@ -58,6 +58,8 @@ class AreaChartModal:
             "index": "1",
         }
         self.check_disttibution_ag_id = {"type": "check_distiribution_ag", "index": "1"}
+        self.check_disttibution_ag_id_dnl = {'type':'check_distiribution_ag_dnl','index':1}
+        self.ag_gr_id = {'type':'orders-grid','index':1}
 
     def make_modal(self):
 
@@ -193,10 +195,14 @@ class AreaChartModal:
             dmc.Space(h=5),
             dmc.Title(f"Детали заказов в ценовом сегменте {_bin}",order=4),
             dmc.Space(h=10),
+            CsvAGgridDownloader(self.check_disttibution_ag_id_dnl).dnl_button,
             dag.AgGrid(            
-            id="orders-grid",
+            id=self.ag_gr_id,
             rowData=dff.to_dict("records"),
             columnDefs=cols,
+            csvExportParams={
+                "fileName": "Заказы_по_цен_сегментам.csv",
+            },
             defaultColDef={
                 "sortable": True,
                 "filter": True,
@@ -211,6 +217,7 @@ class AreaChartModal:
             className=rrgrid_className,
             dangerously_allow_code=True            
         ),
+            
             
         ]
         )
@@ -740,6 +747,9 @@ class AreaChartModal:
     def registered_callacks(self, app):
         destrib_chart_type = self.check_distiribution_chart_id["type"]
         destrib_ag_type = self.check_disttibution_ag_id["type"]
+        
+        ag = self.ag_gr_id['type']
+        dnl = self.check_disttibution_ag_id_dnl['type']
 
         @app.callback(
             Output({"type": destrib_ag_type, "index": MATCH}, "children"),
@@ -752,6 +762,17 @@ class AreaChartModal:
             a = self.update_ag(clickData, rrgrid_className)
 
             return a
+        
+        @app.callback(
+            Output({"type":ag,"index":MATCH},'exportDataAsCsv'),
+            Input({"type":dnl,"index":MATCH},'n_clicks'),
+            prevent_initial_call=True,
+        )
+        def export_data_as_csv(n_clicks):
+            if n_clicks:
+                return True
+            return False
+        
 
 
 class Components:
