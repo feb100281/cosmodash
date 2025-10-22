@@ -34,6 +34,7 @@ from pages.sales_dinamix import Components as sd_components
 from pages.segment_analisis import SEGMENTS_LAYOUT, SEGMENT_DF_STORE, SEGMENTS_CALLBACKS
 from pages.planing import PLANING
 from pages.stores_page import STORES
+from pages.cats_page import CATS
 from components import NoData, InDevNotice, ClickOnNotice
 from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
 
@@ -165,6 +166,12 @@ class MainWnidow:
                                 active='exact',
                                 description = 'Динамика и аналитика по магазинам', 
                                 leftSection=DashIconify(icon='streamline-freehand:shop-open',width=16)
+                                ),
+                    dmc.NavLink(label="Категории", 
+                                href="/Cats", 
+                                active='exact',
+                                description = 'Динамика и аналитика по категориям', 
+                                leftSection=DashIconify(icon='streamline-flex:search-category',width=16)
                                 ),
                     dmc.NavLink(label="Сегменты", 
                                 href="/Segments", 
@@ -302,6 +309,7 @@ def main_app():
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
     dash.register_page("Магазины", path="/Stores", layout=STORES.make_layout())
+    dash.register_page("Категории", path="/Cats", layout=InDevNotice().in_dev_conteines)
     dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
     dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
     dash.register_page("Планирование", path="/forecast", layout=PLANING.layout())

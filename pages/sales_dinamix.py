@@ -32,7 +32,6 @@ import plotly.graph_objects as go
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 import locale
-
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
 from components import ValuesRadioGroups, MonthSlider, DATES, NoData, LoadingScreen
@@ -86,6 +85,7 @@ class Components:
                     children=[LoadingScreen().component],
                 ),
             )
+        
 
 
 
