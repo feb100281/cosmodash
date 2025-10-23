@@ -202,6 +202,7 @@ class MainWnidow:
                               dcc.Store(id='pdf_download', storage_type='memory'),                              
                               PREVIEW_MODAL,
                               SEGMENT_DF_STORE,
+                              CATS.df_store,
                               dcc.Store(id=STORES.df_store_id, storage_type='memory')                                                         
                               ]),
         ],
@@ -303,13 +304,14 @@ def main_app():
     SEGMENTS_CALLBACKS.register_callbacks(app)
     PLANING.registered_callbacks(app)
     STORES.reistered_callbacks(app)
+    CATS.registered_callbacks(app)
     preview_callbacks(app)
     # print(app.callback_map.keys())
 
     dash.register_page("Резюме", path="/summary", layout=SummaryComponents().layout)
     dash.register_page("Динамика продаж", path="/", layout=sd_components().make_layout())
     dash.register_page("Магазины", path="/Stores", layout=STORES.make_layout())
-    dash.register_page("Категории", path="/Cats", layout=InDevNotice().in_dev_conteines)
+    dash.register_page("Категории", path="/Cats", layout=CATS.layout())
     dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
     dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
     dash.register_page("Планирование", path="/forecast", layout=PLANING.layout())
