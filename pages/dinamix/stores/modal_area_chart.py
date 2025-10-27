@@ -142,7 +142,7 @@ class StoreAreaChartModal:
         COLS = [
             "eom", "date", "dt", "cr", "amount", "store_gr_name", "chanel", "manager",
             "cat", "subcat", "client_order", "quant", "client_order_number",
-            "store_gr_name_amount_ytd", "manu", "brend", 'fullname'
+            "store_gr_name_amount_ytd", "manu", "brend", 'fullname', 'quant_cr'
         ]
         df = load_columns_dates(COLS, dates)
         if df is None or len(df) == 0:
@@ -238,6 +238,27 @@ class StoreAreaChartModal:
         )
 
     # ---------- Обзор (текст + бейджи) ----------
+
+    def _stat_card(self, title: str, value: str, sub: str | None = None, icon: str = "tabler:gauge", color: str = "gray"):
+        return dmc.Card(
+            withBorder=True, radius="lg", padding="md", shadow="xs",
+            children=dmc.Group(
+                [
+                    dmc.ThemeIcon(DashIconify(icon=icon, width=18), radius="xl", variant="light", color=color),
+                    dmc.Stack(
+                        [
+                            dmc.Text(title, size="sm", c="dimmed"),
+                            dmc.Text(value, fw=700),
+                            dmc.Text(sub, size="xs", c="dimmed") if sub else None,
+                        ],
+                        gap=2,
+                    ),
+                ],
+                align="flex-start", gap="sm",
+            ),
+        )
+
+
     def _overview_block(self, df_scope: pd.DataFrame, month):
         period_label = self._period_label(month)
         cur = df_scope.loc[df_scope["eom"].eq(month)].copy()
@@ -366,63 +387,106 @@ class StoreAreaChartModal:
             ],
             gap="md",
         )
+    
+    
 
+    
+    
     def _returns_tabs(self, cur_month_df: pd.DataFrame, returns_cur: float):
         has_cr = "cr" in cur_month_df.columns
         return_df = cur_month_df.copy()
+
+        # Сумма возвратов (деньги)
         if has_cr:
             return_df["return_value"] = return_df["cr"].astype(float)
         else:
             return_df["return_value"] = return_df["amount"].where(return_df["amount"] < 0, 0).abs().astype(float)
 
+        # Количество возвратов (шт) — берём модуль на всякий случай
+        has_quant = "quant_cr" in return_df.columns
+        if has_quant:
+            return_df["quant_value"] = return_df["quant_cr"].astype(float).abs().fillna(0.0)
+
         def _make_returns_table(col: str, title: str, top_n: int = 15):
             if col not in return_df.columns:
                 return dmc.Alert(f"Нет данных по: {title}", color="gray", variant="light")
 
-            grp = (
+            # Группировка по сумме возвратов
+            grp_val = (
                 return_df.groupby(col, dropna=False)["return_value"]
                 .sum()
                 .sort_values(ascending=False)
             )
-            grp = grp[grp > 0]
-            if grp.empty:
+            grp_val = grp_val[grp_val > 0]
+            if grp_val.empty:
                 return dmc.Alert(f"— по «{title}» нет возвратов", color="gray", variant="light")
 
-            grp_top = grp.head(top_n)
-            total_returns = float(returns_cur) if returns_cur else 0.0
+            grp_top_val = grp_val.head(top_n)
 
-            thead = dmc.TableThead(
-                dmc.TableTr([
-                    dmc.TableTh("№"),
-                    dmc.TableTh(title),
-                    dmc.TableTh("Возвраты, ₽", ta="right"),
-                    dmc.TableTh("Доля", ta="right"),
-                ])
-            )
-
-            rows = []
-            for i, (k, v) in enumerate(grp_top.items(), start=1):
-                name = str(k) if pd.notna(k) else "—"
-                share = (v / total_returns) if total_returns else 0.0
-                rows.append(
-                    dmc.TableTr([
-                        dmc.TableTd(f"{i}"),
-                        dmc.TableTd(name),
-                        dmc.TableTd(self._fmt_cur(float(v)), ta="right"),
-                        dmc.TableTd(self._fmt_pct(float(share)), ta="right"),
-                    ])
+            # Группировка по количеству, выравниваем по TOP-N индексам
+            if has_quant:
+                grp_qty = (
+                    return_df.groupby(col, dropna=False)["quant_value"]
+                    .sum()
+                    .reindex(grp_top_val.index)
+                    .fillna(0.0)
                 )
 
-            total_in_table = float(grp_top.sum())
+            total_returns = float(returns_cur) if returns_cur else 0.0
+
+            # Заголовок
+            ths = [
+                dmc.TableTh("№"),
+                dmc.TableTh(title),
+            ]
+            if has_quant:
+                ths.append(dmc.TableTh("Кол-во, шт", ta="right"))
+            ths += [
+                dmc.TableTh("Возвраты, ₽", ta="right"),
+                dmc.TableTh("Доля", ta="right"),
+            ]
+            thead = dmc.TableThead(dmc.TableTr(ths))
+
+            # Строки — итерируемся по позициям, чтобы не споткнуться о NaN-ключи
+            rows = []
+            top_index = list(grp_top_val.index)
+            top_values = grp_top_val.values
+            top_qty = grp_qty.values if has_quant else None
+
+            for i, idx in enumerate(top_index, start=1):
+                name = str(idx) if pd.notna(idx) else "—"
+                val = float(top_values[i-1])
+                share = (val / total_returns) if total_returns else 0.0
+
+                tds = [
+                    dmc.TableTd(f"{i}"),
+                    dmc.TableTd(name),
+                ]
+                if has_quant:
+                    qty = float(top_qty[i-1])
+                    tds.append(dmc.TableTd(f"{qty:,.0f}".replace(",", " "), ta="right"))
+                tds += [
+                    dmc.TableTd(self._fmt_cur(val), ta="right"),
+                    dmc.TableTd(self._fmt_pct(float(share)), ta="right"),
+                ]
+                rows.append(dmc.TableTr(tds))
+
+            # Итоги по таблице (только по TOP-N)
+            total_in_table = float(np.sum(top_values))
             share_in_table = (total_in_table / total_returns) if total_returns else 0.0
-            tfoot = dmc.TableTfoot(
-                dmc.TableTr([
-                    dmc.TableTh("ИТОГО"),
-                    dmc.TableTh("-"),
-                    dmc.TableTh(self._fmt_cur(total_in_table), ta="right"),
-                    dmc.TableTh(self._fmt_pct(share_in_table), ta="right"),
-                ])
-            )
+
+            tfoot_cells = [
+                dmc.TableTh("ИТОГО"),
+                dmc.TableTh("-"),
+            ]
+            if has_quant:
+                total_qty_in_table = float(np.sum(top_qty))
+                tfoot_cells.append(dmc.TableTh(f"{total_qty_in_table:,.0f}".replace(",", " "), ta="right"))
+            tfoot_cells += [
+                dmc.TableTh(self._fmt_cur(total_in_table), ta="right"),
+                dmc.TableTh(self._fmt_pct(share_in_table), ta="right"),
+            ]
+            tfoot = dmc.TableTfoot(dmc.TableTr(tfoot_cells))
 
             return dmc.Table(
                 children=[thead, dmc.TableTbody(rows), tfoot],
@@ -434,6 +498,7 @@ class StoreAreaChartModal:
                 withColumnBorders=False,
             )
 
+        # --- вкладки возвратов ---
         return dmc.Tabs(
             [
                 dmc.TabsList([
@@ -454,6 +519,12 @@ class StoreAreaChartModal:
             variant="pills",
             keepMounted=False,
         )
+
+    
+    
+
+
+
 
    
     # ---------- Разрезы ----------
