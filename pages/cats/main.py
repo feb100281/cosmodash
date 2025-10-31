@@ -13,9 +13,9 @@ from components import(
     ValuesRadioGroups
     
 )
-from .queries import fletch_cats, get_df, cats_report, VALS_DICT, OPTIONS_SWITCHS
+from .queries import fletch_cats, cats_report, VALS_DICT, OPTIONS_SWITCHS
 from dash_iconify import DashIconify
-from data import load_df_from_redis, delete_df_from_redis, save_df_to_redis
+# from data import load_df_from_redis, delete_df_from_redis, save_df_to_redis
 
 
 def id_to_months(start, end):
@@ -37,14 +37,9 @@ class CatsMainWindow:
             dmc.Badge(size="md", variant="light", radius="xs", 	color="red", id=self.last_update_lb_id)
         )
         self.data_conteiner_id = 'cats_data_conteirer_id'
-        self.df_store = dcc.Store(id=self.df_store_id, storage_type="session")
         self.tree_id = 'cattree_id_for_cat_analisys'
-        self.last_update_lb_id = "cat_last_update_lb"
-        self.last_update_lb = dcc.Loading(
-            dmc.Badge(size="md", variant="light", radius="xs", 	color="red", id=self.last_update_lb_id)
-        )
         self.cat_group_controll_id = 'cat_group_controll_id'
-        self.cat_period_controll_id = 'cat_group_controll_id'
+        self.cat_period_controll_id = 'cat_period_controll_id'
         self.summary_data_conteiner_id = 'summary_data_conteiner_id_for_cats'
         
         self.group_controll = dmc.SegmentedControl(
@@ -56,7 +51,7 @@ class CatsMainWindow:
             value=1, 
             id = self.cat_group_controll_id,
             variant='filled',  
-            color = "#6d28d9",
+            color = "blue",
             withItemsBorders=False,
             radius="md"
                          
@@ -71,7 +66,7 @@ class CatsMainWindow:
             value=2,  
             id = self.cat_period_controll_id,
             variant='filled',  
-            color = "#6d28d9",
+            color = "blue",
             withItemsBorders=False,
             radius="md"
             
@@ -133,72 +128,115 @@ class CatsMainWindow:
     def layout(self):
         return dmc.Container(
             [
-                self.title,
-                self.memo,                
-                self.mslider,                
-                self.last_update_lb,                
-                dmc.Space(h=10),
-                dmc.Title('Отчет по категориям',c='blue',order=3),
+                # Верхняя часть: заголовок, заметка, слайдер периода, дата обновления
+                dmc.Stack(
+                    [
+                        self.title,
+                        self.memo,
+                        self.mslider,
+                        dmc.Group(
+                            [self.last_update_lb],
+                            justify="space-between",
+                            align="center",
+                        ),
+                    ],
+                    gap="xs",
+                ),
+
+                dmc.Space(h=8),
+
+                # Заголовок раздела
                 dmc.Group(
                     [
-                        self.value_controlls,
-                        self.option_controll,
-                    ]
-                    ),
+                        dmc.Title("Отчет по категориям", order=3, c="blue"),
+                        dmc.Badge("Аналитика по категориям", variant="outline", radius="sm"),
+                    ],
+                    justify="space-between",
+                    align="center",
+                ),
+
+                dmc.Space(h=6),
+
                 
-                dmc.Container(
-                    id = self.summary_data_conteiner_id,
-                    fluid=True
-                    ),
+
+                # Карточка с настройками (МЕТРИКА / ОПЦИИ)
+                dmc.Card(
+                    withBorder=True,
+                    radius="md",
+                    p="md",
+                    style={"backdropFilter": "blur(4px)"},
+                    children=[
+                        dmc.Group(
+                            [
+                                # МЕТРИКА
+                                dmc.Stack(
+                                    [
+                                        dmc.Group(
+                                            [
+                                                dmc.ThemeIcon(
+                                                    radius="xl",
+                                                    size="sm",
+                                                    variant="light",
+                                                    color="blue",
+                                                    children=DashIconify(icon="lucide:bar-chart-2", width=16),
+                                                ),
+                                                dmc.Text("МЕТРИКА", tt="uppercase", fw=700, size="sm", c="dimmed"),
+                                            ],
+                                            gap=6,
+                                        ),
+                                        self.value_controlls,
+                                    ],
+                                    gap="xs",
+                                    w="100%",
+                                ),
+
+                                # ОПЦИИ
+                                dmc.Stack(
+                                    [
+                                        dmc.Group(
+                                            [
+                                                dmc.ThemeIcon(
+                                                    radius="xl",
+                                                    size="sm",
+                                                    variant="light",
+                                                    color="blue",
+                                                    children=DashIconify(icon="lucide:settings", width=16),
+                                                ),
+                                                dmc.Text("ОПЦИИ", tt="uppercase", fw=700, size="sm", c="dimmed"),
+                                            ],
+                                            gap=6,
+                                        ),
+                                        self.option_controll,
+                                    ],
+                                    gap="xs",
+                                    w="100%",
+                                ),
+                            ],
+                            grow=True,
+                            justify="space-between",
+                            align="flex-start",
+                            wrap="wrap",
+                            gap="xl",
+                        )
+                    ],
+                ),
+
+
                 dmc.Space(h=10),
-                # dmc.Grid(
-                #     [
-                #         dmc.GridCol(
-                #             [
-                #                 dmc.Container(
-                #                     [
-                #                         dmc.Tree(
-                #                             id = self.tree_id,
-                #                             data=self.make_tree(),
-                #                             expandedIcon=DashIconify(icon="line-md:chevron-right-circle", width=20),
-                #                             collapsedIcon=DashIconify(icon="line-md:arrow-up-circle", width=20),
-                #                             checkboxes=True,
-                #                         )                                        
-                #                     ],
-                #                     fluid=True
-                #                 )                                
-                #             ],
-                #             span=3.5
-                #         ),
-                #         dmc.GridCol(
-                #             [
-                #                 dmc.Container(
-                #                     [
-                                       
-                #                         dmc.Group([self.group_controll,self.period_controll])
-                                           
-                #                     ],
-                #                     id = self.data_conteiner_id,
-                #                     fluid=True
-                #                 )
-                #             ],
-                #             span=7.5
-                #         )
-                        
-                #     ]
-                    
-                # ),
-                # dmc.Text(id='cat_tex_temp',),
-                dcc.Store(id='dummy_store_for_cat_trigger'),
-                dmc.Space(h=50)
-                
+
+                # Контейнер с саммари/графиками
+                dmc.Container(id=self.summary_data_conteiner_id, fluid=True),
+
+                dmc.Space(h=10),
+                dcc.Store(id="dummy_store_for_cat_trigger"),
+                dmc.Space(h=40),
             ],
-            fluid=True
+            fluid=True,
         )
+
     
     def registered_callbacks(self,app):
         
-        #Пишем df в cash
         @app.callback(
             # Output(self.df_store,'data'),
             Output(self.last_update_lb_id,'children'),
@@ -216,25 +254,7 @@ class CatsMainWindow:
             start_dt = pd.to_datetime(start) + pd.offsets.MonthBegin(-1)
             start = start_dt.strftime('%Y-%m-%d')
                        
-            # if store_data and "df_id" in store_data:
-            #     if store_data["start"] == start and store_data["end"] == end:
-            #        return  no_update, f"{start_dt.strftime('%d %b %y')} - {end_dt.strftime('%d %b %y')}"
-
-            #     delete_df_from_redis(store_data["df_id"])
-
-            # df = get_df(start, end)
-
-            # df_id = save_df_to_redis(df,expire_seconds=1200)
-
-            # store_dict = {
-            #     "df_id": df_id,
-            #     "start": start,
-            #     "end": end,
-            #     "slider_val": slider_value,
-            # }
-
-            # min_date = pd.to_datetime(df["date"].min())
-            # max_date = pd.to_datetime(df["date"].max())
+            
 
             notificattion = (
                 f"{start_dt.strftime('%b %y')} - {end_dt.strftime('%b %y')}"
@@ -242,26 +262,18 @@ class CatsMainWindow:
 
             return notificattion, cats_report(start, end, opt, val)
         
-        # @app.callback(
-        #     Output('cat_tex_temp','children'),
-        #     Input(self.df_store,'data'),
-        #     prevent_initial_call=True,
-        # )
-        # def showids(data):
-            
-        #     return data['df_id']
+     
         
-        
+
         
         
         @app.callback(
-            Output({'type':'cat_chart','index':MATCH},'withBarValueLabel'),
-            Input({'type':'val_switch','index':MATCH},'checked'),            
-            prevent_initial_call=True,            
+            Output({'type': 'cat_chart', 'index': MATCH}, 'withBarValueLabel'),
+            Input({'type': 'val_switch', 'index': MATCH}, 'checked')
         )
-        def show_data(val):
-            
-            return val
+        def toggle_values(show_values):
+            return bool(show_values)
+
         
         
         
