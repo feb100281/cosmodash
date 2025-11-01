@@ -131,8 +131,11 @@ def _kpi_cards(df_current: pd.DataFrame, df_reff: pd.DataFrame, val: str, start,
     color = "green" if delta >= 0 else "red"
 
     # Форматируем названия месяцев
-    cur_label = pd.to_datetime(end).strftime("%B %Y")       # например "Октябрь 2025"
-    ref_label = pd.to_datetime(start).strftime("%B %Y")     # например "Июль 2025"
+    cur_label: str = pd.to_datetime(end).strftime("%b %Y")       # например "Октябрь 2025"
+    ref_label: str = pd.to_datetime(start).strftime("%b %Y")     # например "Июль 2025"
+    cur_label = cur_label.capitalize()
+    ref_label = ref_label.capitalize()
+    
 
     return dmc.Group(
         [
@@ -203,7 +206,7 @@ def _top_table(
 
     return dmc.Stack(
         [
-            dmc.Text(f"Top-10: {label_current} vs {label_reff}", size="sm", c="dimmed"),
+            dmc.Text(f"{label_current} vs {label_reff}", size="sm", c="dimmed"),
             dmc.Table(
                 [
                     dmc.TableThead(
@@ -256,8 +259,8 @@ def cats_report(start, end, option='cat', val='amount'):
     df_reff["tp"] = "areff"
 
     # подписи месяцев (локаль у тебя уже ставится в main.py)
-    label_current = end_dt.strftime("%B %Y").capitalize()
-    label_reff = start_dt.strftime("%B %Y").capitalize()
+    label_current = end_dt.strftime("%b %Y").capitalize()
+    label_reff = start_dt.strftime("%b %Y").capitalize()
 
     # общий df
     df = pd.concat([df_current, df_reff], ignore_index=True)
