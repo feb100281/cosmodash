@@ -20,12 +20,8 @@ from components import (
     InDevNotice,
     CsvAGgridDownloader
 )
-from data import (
-    load_columns_df,
-    save_df_to_redis,
-    load_df_from_redis,
-    load_columns_dates,
-    COLS_DICT,
+from data import (    
+    ENGINE
 )
 
 
@@ -139,12 +135,55 @@ class StoreAreaChartModal:
 
     @staticmethod
     def _load_base_df(dates):
+        cm, lm, ly = dates
+       
+        cm = cm.strftime('%Y-%m-%d') 
+        lm = lm.strftime('%Y-%m-%d')  
+        ly = ly.strftime('%Y-%m-%d') 
+            
+        q = f"""
+        select 
+        LAST_DAY(s.date) as eom,
+        s.date,
+        s.dt,
+        s.cr,
+        (s.dt - s.cr) as amount,
+        coalesce(sg.name,'Магазин не указан') as store_gr_name,
+        coalesce(st.chanel,'Канал не указан') as chanel,
+        coalesce(m.report_name,'Менеджер не указан') as manager,
+        coalesce(cat.name,'Нет категории') as cat,
+        coalesce(sc.name,'Нет подкатегории') as subcat,
+        coalesce(s.client_order,'нет данных') as client_order,
+        (s.quant_dt - s.quant_cr) as quant,
+        coalesce(s.client_order_number,'нет данных') as client_order_number,
+        coalesce(mn.name,'нет данных') as manu,
+        coalesce(b.name,'нет данных') as brend,
+        coalesce(i.fullname,'нет номенклатуры') as fullname,
+        s.quant_cr
+        from sales_salesdata as s
+
+        left join corporate_items as i on i.id = s.item_id
+        left join corporate_stores as st on st.id = s.store_id
+        left join corporate_storegroups as sg on sg.id = st.gr_id
+        left join corporate_managers as m on m.id = s.manager_id
+        left join corporate_cattree as cat on cat.id = i.cat_id
+        left join corporate_subcategory as sc on sc.id = i.subcat_id
+        left join corporate_itemmanufacturer as mn on mn.id = i.manufacturer_id
+        left join corporate_itembrend as b on b.id = i.brend_id
+
+        where LAST_DAY(s.date)  in ('{cm}','{lm}','{ly}')
+        
+        """
+        
+        
+        
         COLS = [
             "eom", "date", "dt", "cr", "amount", "store_gr_name", "chanel", "manager",
             "cat", "subcat", "client_order", "quant", "client_order_number",
             "store_gr_name_amount_ytd", "manu", "brend", 'fullname', 'quant_cr'
         ]
-        df = load_columns_dates(COLS, dates)
+        # df = load_columns_dates(COLS, dates)
+        df = pd.read_sql(q,ENGINE)
         if df is None or len(df) == 0:
             return pd.DataFrame(columns=COLS)
 
