@@ -23,6 +23,11 @@ def id_to_months(start, end):
 
 
 
+
+
+
+
+
 class CatsMainWindow:
     def __init__(self):
         self.title = dmc.Title([DashIconify(icon='streamline-flex:search-category')," Анализ категорий"], 
@@ -273,8 +278,3 @@ class CatsMainWindow:
         )
         def toggle_values(show_values):
             return bool(show_values)
-
-        
-        
-        
-        
