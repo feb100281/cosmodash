@@ -7,7 +7,8 @@ from data import (
     delete_df_from_redis,
     save_report,
     delete_report,    
-    REPORTS
+    REPORTS,
+    ENGINE
 )
 from dash.exceptions import PreventUpdate
 from datetime import datetime, date, timedelta
@@ -88,8 +89,12 @@ class AreaChartModal:
             return d["bins"], last_month
 
         _bin, _month = parcer(d)
+        
 
         _month = pd.to_datetime(_month, errors="coerce") + pd.offsets.MonthEnd(0)
+        
+        
+                
 
         COLS = [
             "date",
@@ -102,8 +107,47 @@ class AreaChartModal:
             "quant",
             "client_order_number",
         ]
+        
+        month = _month.strftime('%Y-%m-%d')
+        
+        q = f"""
+        select 
+        LAST_DAY(s.date) as eom,
+        s.date,
+        s.dt,
+        s.cr,
+        (s.dt - s.cr) as amount,
+        coalesce(sg.name,'Магазин не указан') as store,
+        coalesce(st.chanel,'Канал не указан') as chanel,
+        coalesce(m.report_name,'Менеджер не указан') as manager,
+        coalesce(cat.name,'Нет категории') as cat,
+        coalesce(sc.name,'Нет подкатегории') as subcat,
+        s.client_order,
+        (s.quant_dt - s.quant_cr) as quant,
+        s.client_order_number
+        -- mn.name as manager,
+        -- b.name,
+        -- i.fullname,
+        -- s.quant_cr
+        from sales_salesdata as s
 
-        df_current = load_columns_dates(COLS, [_month])
+        left join corporate_items as i on i.id = s.item_id
+        left join corporate_stores as st on st.id = s.store_id
+        left join corporate_storegroups as sg on sg.id = st.gr_id
+        left join corporate_managers as m on m.id = s.manager_id
+        left join corporate_cattree as cat on cat.id = i.cat_id
+        left join corporate_subcategory as sc on sc.id = i.subcat_id
+        -- left join corporate_itemmanufacturer as mn on mn.id = i.manufacturer_id
+        -- left join corporate_itembrend as b on b.id = i.brend_id
+
+        where LAST_DAY(s.date)  in ('{month}')
+                
+        """
+        df_current = pd.read_sql(q,ENGINE)
+               
+        
+
+        # df_current = load_columns_dates(COLS, [_month])
         df_current["orders_type"] = np.where(
             df_current["client_order"] == "<Продажи без заказа>",
             "Прочие",
@@ -228,23 +272,45 @@ class AreaChartModal:
         last_month = month + pd.offsets.MonthEnd(-1)
         chart_id = self.check_distiribution_chart_id
 
-        COLS = [
-            "date",
-            "dt",
-            "cr",
-            "amount",
-            "store",
-            "eom",
-            "chanel",
-            "manager",
-            "cat",
-            "subcat",
-            "client_order",
-            "quant",
-            "client_order_number",
-        ]
-        dates = [month, last_month]
-        df_current = load_columns_dates(COLS, dates)
+       
+        
+        q = f"""
+        select 
+        LAST_DAY(s.date) as eom,
+        s.date,
+        s.dt,
+        s.cr,
+        (s.dt - s.cr) as amount,
+        coalesce(sg.name,'Магазин не указан') as store,
+        coalesce(st.chanel,'Канал не указан') as chanel,
+        coalesce(m.report_name,'Менеджер не указан') as manager,
+        coalesce(cat.name,'Нет категории') as cat,
+        coalesce(sc.name,'Нет подкатегории') as subcat,
+        s.client_order,
+        (s.quant_dt - s.quant_cr) as quant,
+        s.client_order_number
+        -- mn.name as manager,
+        -- b.name,
+        -- i.fullname,
+        -- s.quant_cr
+        from sales_salesdata as s
+
+        left join corporate_items as i on i.id = s.item_id
+        left join corporate_stores as st on st.id = s.store_id
+        left join corporate_storegroups as sg on sg.id = st.gr_id
+        left join corporate_managers as m on m.id = s.manager_id
+        left join corporate_cattree as cat on cat.id = i.cat_id
+        left join corporate_subcategory as sc on sc.id = i.subcat_id
+        -- left join corporate_itemmanufacturer as mn on mn.id = i.manufacturer_id
+        -- left join corporate_itembrend as b on b.id = i.brend_id
+
+        where LAST_DAY(s.date)  in ('{month}','{last_month}')
+        """
+        df_current = pd.read_sql(q,ENGINE)
+        
+        
+        
+        # df_current = load_columns_dates(COLS, dates)
         df_current["orders_type"] = np.where(
             df_current["client_order"] == "<Продажи без заказа>",
             "Прочие",
