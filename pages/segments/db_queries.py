@@ -15,7 +15,7 @@ def get_items(ids_int, start, end):
         sum(quant_cr) as quant_cr,
         i.id as item_id,
         COALESCE(i.article, '') as article,
-        i.fullname,
+        CONCAT(i.fullname, ' (арт. ', COALESCE(i.article, ''), ')') as fullname,
         i.init_date,
         GROUP_CONCAT(DISTINCT m.name ORDER BY m.name SEPARATOR ',') AS manu,
         GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ',') AS brend,

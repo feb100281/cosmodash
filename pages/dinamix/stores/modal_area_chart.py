@@ -159,6 +159,7 @@ class StoreAreaChartModal:
         coalesce(mn.name,'нет данных') as manu,
         coalesce(b.name,'нет данных') as brend,
         coalesce(i.fullname,'нет номенклатуры') as fullname,
+        COALESCE(i.article, '') as article,
         s.quant_cr
         from sales_salesdata as s
 
@@ -180,7 +181,7 @@ class StoreAreaChartModal:
         COLS = [
             "eom", "date", "dt", "cr", "amount", "store_gr_name", "chanel", "manager",
             "cat", "subcat", "client_order", "quant", "client_order_number",
-            "store_gr_name_amount_ytd", "manu", "brend", 'fullname', 'quant_cr'
+            "store_gr_name_amount_ytd", "manu", "brend", 'fullname', 'article', 'quant_cr'
         ]
         # df = load_columns_dates(COLS, dates)
         df = pd.read_sql(q,ENGINE)
@@ -639,7 +640,7 @@ class StoreAreaChartModal:
             df_scope["eom"].eq(eom),
             [
                 "date","client_order_number","orders_type",
-                "cat","subcat","manager","chanel","quant","amount","fullname",
+                "cat","subcat","manager","chanel","quant","amount","fullname","article",
             ],
         ].copy()
         tx["date"] = pd.to_datetime(tx["date"], errors="coerce").dt.strftime("%Y-%m-%d")
@@ -673,11 +674,18 @@ class StoreAreaChartModal:
                     "headerClass": "ag-center-header",
                     "children": [
                         {"headerName": "Номенклатура", "field": "fullname", "colId": "fullname",
-                        "sortable": True, "enableRowGroup": True, "minWidth": 220, "type": "leftAligned",
+                        "sortable": True, "enableRowGroup": True, "minWidth": 220, "type": "leftAligned",                        
                         "cellClass": "ag-firstcol-bg", "headerClass": "ag-center-header"},
+                        
+                        {"headerName": "Артикль", "field": "article", "colId": "article",
+                        "sortable": True, "enableRowGroup": True, "minWidth": 220, "type": "leftAligned",                        
+                        "cellClass": "ag-firstcol-bg", "headerClass": "ag-center-header"},
+                        
+                        
                         {"headerName": "Категория", "field": "cat", "colId": "cat",
                         "sortable": True, "enableRowGroup": True, "minWidth": 160, "type": "leftAligned",
                         "columnGroupShow": "open", "headerClass": "ag-center-header"},
+                        
                         {"headerName": "Подкатегория", "field": "subcat", "colId": "subcat",
                         "sortable": True, "enableRowGroup": True, "minWidth": 180, "type": "leftAligned",
                         "columnGroupShow": "open", "headerClass": "ag-center-header"},
@@ -710,6 +718,7 @@ class StoreAreaChartModal:
                 {"colId": "client_order_number"},
                 {"colId": "orders_type"},   # появится при раскрытии группы (columnGroupShow управляет видимостью)
                 {"colId": "fullname"},
+                {"colId": "article"},
                 {"colId": "cat"},
                 {"colId": "subcat"},
                 {"colId": "quant"},
@@ -815,9 +824,15 @@ class StoreAreaChartModal:
                     {"headerName": "Номенклатура", "field": "fullname", "colId": "fullname",
                     "sortable": True, "enableRowGroup": True, "minWidth": 220, "type": "leftAligned",
                     "cellClass": "ag-firstcol-bg", "headerClass": "ag-center-header"},
+                    
+                    {"headerName": "Артикл", "field": "article", "colId": "article",
+                    "sortable": True, "enableRowGroup": True, "minWidth": 180, "type": "leftAligned",
+                    "columnGroupShow": "open", "headerClass": "ag-center-header"},
+                    
                     {"headerName": "Категория", "field": "cat", "colId": "cat",
                     "sortable": True, "enableRowGroup": True, "minWidth": 160, "type": "leftAligned",
                     "columnGroupShow": "open", "headerClass": "ag-center-header"},
+                    
                     {"headerName": "Подкатегория", "field": "subcat", "colId": "subcat",
                     "sortable": True, "enableRowGroup": True, "minWidth": 180, "type": "leftAligned",
                     "columnGroupShow": "open", "headerClass": "ag-center-header"},
@@ -841,6 +856,7 @@ class StoreAreaChartModal:
                 {"colId": "client_order_number"},
                 {"colId": "orders_type"},
                 {"colId": "fullname"},
+                {"colId": "article"},
                 {"colId": "cat"},
                 {"colId": "subcat"},
                 {"colId": "quant"},
