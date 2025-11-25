@@ -258,7 +258,7 @@ def stores_block(df_stores: pd.DataFrame):
 
         
     dfs['rank'] = dfs['amount'].rank(method='min', ascending=False)
-    dfs['store_sales'] = np.where(dfs['rank'] <= 5, dfs['store_gr_name'], 'Другие магазины')
+    dfs['store_sales'] = np.where(dfs['rank'] <= 20, dfs['store_gr_name'], 'Другие магазины')
     dfs = dfs.pivot_table(index='store_sales', values='amount', aggfunc='sum').reset_index().sort_values(by='amount', ascending=False)
 
     store_data = []
