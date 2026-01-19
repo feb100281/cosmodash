@@ -149,12 +149,12 @@ class MainWnidow:
                 id="navbar",
                 children=[
                     "Навигация",
-                    dmc.NavLink(label="Резюме", 
-                                description = 'Краткое резюме по продажам',
-                                href="/summary", 
-                                active='exact',
-                                leftSection=DashIconify(icon='fluent-mdl2:total',width=16)
-                                ),
+                    # dmc.NavLink(label="Резюме", 
+                    #             description = 'Краткое резюме по продажам',
+                    #             href="/summary", 
+                    #             active='exact',
+                    #             leftSection=DashIconify(icon='fluent-mdl2:total',width=16)
+                    #             ),
                     dmc.NavLink(label="Динамика",
                                 description = 'Анализ динамики продаж', 
                                 href="/", 

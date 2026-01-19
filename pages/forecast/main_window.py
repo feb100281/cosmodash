@@ -30,6 +30,17 @@ class PlaningPage:
         self.changepoint_prior_scale_id = "changepoint_prior_scale_id"
         self.changepoint_range_id = "changepoint_range_id"
         self.n_changepoints_id = "n_changepoints_id"
+        
+        self.empty_hint = dmc.Alert(
+            title="Нужно выбрать параметры",
+            children="Выберите горизонт планирования (дату) — после этого появится прогноз.",
+            color="teal",
+            variant="light",
+            radius="md",
+            withCloseButton=False,
+            icon=DashIconify(icon="mdi:calendar-check", width=18),
+        )
+
 
         self.dates_fieldsets = dmc.Fieldset(
             [
@@ -212,7 +223,7 @@ class PlaningPage:
                                 dcc.Loading(
                                     [
                                         dmc.Container(
-                                            children=[NoData().component],
+                                            children=[self.empty_hint],
                                             id=self.resultes_container_id,
                                             fluid=True,
                                         )
