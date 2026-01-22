@@ -10,6 +10,18 @@ import plotly.graph_objects as go
 
 from typing import Optional
 
+        
+from dash import Output, Input, State, no_update, dcc
+import pandas as pd
+import numpy as np
+from io import BytesIO
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
+from openpyxl.formatting.rule import ColorScaleRule
+
 
 
 
@@ -223,34 +235,152 @@ def fmt_compact(v: float, money=False, digits=2):
 
 
 
+
+
+
+
 def pareto_block(df: pd.DataFrame):
-    # агрегируем по номенклатуре
-    g = (df.groupby("fullname", as_index=False)
-           .agg(amount=("dt","sum")))
-    g = g.sort_values("amount", ascending=False).reset_index(drop=True)
-    g["cum_share"] = (g["amount"].cumsum() / g["amount"].sum() * 100).fillna(0)
-    # ограничим топ-30 для читаемости
-    top = g.head(30)
+    x = df.copy()
 
-    data = top.to_dict("records")
-    return dmc.Card(withBorder=True, radius=0, p="md", children=[
-        dmc.Group(justify="space-between", children=[
-            dmc.Title("Парето по выручке (топ-30)", order=5),
-            dmc.Badge("бар = выручка; линия = накопл. доля, %", variant="light"),
-        ]),
-        dmc.Space(h=6),
-        dmc.BarChart(
-            h=320, data=data, dataKey="fullname",
-            series=[{"name": "amount", "label": "Выручка"}],
-            valueFormatter = {"function": "formatNumberIntl"},
-            withLegend=False,
-            gridAxis="xy",
+    # safe amount
+    if "amount" not in x.columns:
+        x["dt"] = pd.to_numeric(x.get("dt"), errors="coerce").fillna(0.0)
+        x["cr"] = pd.to_numeric(x.get("cr"), errors="coerce").fillna(0.0)
+        x["amount"] = x["dt"] - x["cr"]
+
+    g = (
+        x.groupby("fullname", as_index=False)
+         .agg(amount=("amount", "sum"))
+         .sort_values("amount", ascending=False)
+         .reset_index(drop=True)
+    )
+
+    total = float(g["amount"].sum()) if not g.empty else 0.0
+    g["share"] = (g["amount"] / total * 100).fillna(0) if total > 0 else 0.0
+    g["cum_share"] = g["share"].cumsum()
+
+    top = g.head(30).copy()
+    top["rank"] = np.arange(1, len(top) + 1)
+
+    chart_data = top[["fullname", "amount", "cum_share"]].to_dict("records")
+
+    NBSP = "\u202F"
+    def rub(v):
+        try:
+            s = f"{float(v):,.0f}".replace(",", " ")
+            s = s.replace(" ", NBSP)
+            return f"{s}{NBSP}₽"
+        except Exception:
+            return f"0{NBSP}₽"
+
+    def pct(v):
+        try:
+            return f"{float(v):.1f}%".replace(".", ",")
+        except Exception:
+            return "0,0%"
+
+    table = dmc.Table(
+        striped=True,
+        highlightOnHover=True,
+        withTableBorder=True,
+        withColumnBorders=False,
+        horizontalSpacing="sm",
+        verticalSpacing="xs",
+        stickyHeader=True,
+        children=[
+            dmc.TableThead(
+                dmc.TableTr([
+                    dmc.TableTh("#", style={"width": 44, "textAlign": "right"}),
+                    dmc.TableTh("Номенклатура"),
+                    dmc.TableTh("Выручка", style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                    dmc.TableTh("Доля", style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                    dmc.TableTh("Накопл.", style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                ])
+            ),
+            dmc.TableTbody([
+                dmc.TableTr([
+                    dmc.TableTd(str(int(r.rank)), style={"textAlign": "right", "opacity": 0.8}),
+                    dmc.TableTd(dmc.Text(str(r.fullname), lineClamp=1, style={"maxWidth": 520})),
+                    dmc.TableTd(rub(r.amount), style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                    dmc.TableTd(pct(r.share), style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                    dmc.TableTd(pct(r.cum_share), style={"textAlign": "right", "whiteSpace": "nowrap"}),
+                ])
+                for r in top.itertuples(index=False)
+            ])
+        ]
+    )
 
 
-        ),
-        dmc.Space(h=6),
-        dmc.Progress(value=float(top["cum_share"].iloc[-1] if not top.empty else 0), size="lg", striped=True, radius="xs"),
-    ])
+    tabs = dmc.Tabs(
+        value="chart",
+        children=[
+            dmc.TabsList([
+                dmc.TabsTab("График", value="chart", leftSection=DashIconify(icon="mdi:chart-bar", width=16)),
+                dmc.TabsTab("Список", value="list", leftSection=DashIconify(icon="mdi:format-list-bulleted", width=16)),
+            ]),
+            dmc.TabsPanel(
+                value="chart",
+                children=[
+                    dmc.Space(h=8),
+                    dmc.BarChart(
+                        h=320,
+                        data=chart_data,
+                        dataKey="fullname",
+                        series=[{"name": "amount", "label": "Выручка"}],
+                        valueFormatter={"function": "formatNumberIntl"},
+                        withLegend=False,
+                        gridAxis="xy",
+                    ),
+                    dmc.Space(h=8),
+                    dmc.Progress(
+                        value=float(top["cum_share"].iloc[-1] if not top.empty else 0),
+                        size="lg", striped=True, radius="xs"
+                    ),
+                ],
+            ),
+            dmc.TabsPanel(
+                value="list",
+                children=[
+                    dmc.Space(h=8),
+                    dmc.ScrollArea(
+                        h=360,
+                        offsetScrollbars=True,
+                        type="auto",
+                        children=table,
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    return dmc.Card(
+        withBorder=True, radius=0, p="md",
+        children=[
+            dmc.Group(
+                justify="space-between",
+                align="center",
+                children=[
+                    dmc.Title("Парето по выручке (топ-30)", order=5),
+                    dmc.Group(gap="xs", children=[
+                        dmc.Button(
+                            "Excel",
+                            id="pareto-export-xlsx",
+                            leftSection=DashIconify(icon="mdi:file-excel", width=18),
+                            variant="light",
+                            color="green",
+                            radius="sm",
+                            size="sm",
+                        ),
+                        dcc.Download(id="pareto-download-xlsx"),
+                    ]),
+                ],
+            ),
+            dmc.Space(h=6),
+            tabs,  # ✅ теперь переменная существует
+        ]
+    )
+
+
 
 # Блок по магазинам/менеджерам
 def stores_block(df_stores: pd.DataFrame):
@@ -500,82 +630,7 @@ def insights_block(
     if selected_category and (cat_col is not None) and (cat_col in d.columns):
         d = d.loc[d[cat_col].astype(str) == str(selected_category)].copy()
 
-    # ================== Новые номенклатуры (30 дней) ==================
-    # new_block = dmc.Box()
-    # new_items_cnt = 0
-    # new_amount_sum = 0.0
 
-    # if (init_col is not None and init_col in d.columns and
-    #     date_col is not None and date_col in d.columns and
-    #     full_col is not None and full_col in d.columns and
-    #     not d.empty):
-
-    #     max_sel_date = pd.to_datetime(d[date_col].max(), errors="coerce")
-    #     if pd.notna(max_sel_date):
-    #         window_start = max_sel_date - pd.Timedelta(days=30)
-    #         new_mask = d[init_col].between(window_start, max_sel_date, inclusive="both")
-    #         d_new = d.loc[new_mask].copy()
-
-    #         if not d_new.empty:
-    #             new_items_cnt  = int(d_new[full_col].nunique())
-    #             new_amount_sum = float(d_new["amount"].sum())
-
-    #             g_new = (d_new.groupby(full_col, as_index=False)
-    #                         .agg(amount=("amount", "sum"),
-    #                              quant =("quant",  "sum"))
-    #                         .assign(price=lambda x: x["amount"] / x["quant"].replace(0, pd.NA))
-    #                         .sort_values("amount", ascending=False))
-
-    #             def item_two_lines(i, name, q, a, p):
-    #                 top = dmc.Text(f"{i}. {name}", size="sm", lineClamp=1, style={"minWidth": 0})
-    #                 q_txt = f"{int(round(q))} шт" if pd.notna(q) else "— шт"
-    #                 a_txt = fmt_compact(a, money=True)
-    #                 p_txt = f"~{fmt_compact(p, money=True)}/ед" if pd.notna(p) and p > 0 else "~—/ед"
-    #                 bottom = dmc.Text(f"Продано: {q_txt} · {a_txt} · {p_txt}", size="xs", c="dimmed", style={"fontStyle": "italic"})
-    #                 return dmc.ListItem(dmc.Stack(gap=2, children=[top, bottom]))
-
-    #             new_items = [
-    #                 item_two_lines(i, getattr(r, full_col), float(r.quant), float(r.amount),
-    #                                (float(r.price) if pd.notna(r.price) else None))
-    #                 for i, r in enumerate(g_new.itertuples(index=False), start=1)
-    #             ]
-
-    #             header_row = dmc.Group(
-    #                 justify="space-between", align="center",
-    #                 children=[
-    #                     dmc.Group(gap="xs", align="center", children=[
-    #                         dmc.Badge(f"{new_items_cnt} новых SKU", variant="light", color="teal", radius="sm"),
-    #                         dmc.Badge(f"Выручка: {fmt_compact(new_amount_sum, money=True)}", variant="outline", color="blue", radius="sm"),
-    #                     ]),
-    #                     dmc.Text(f"{window_start:%d.%m.%Y} — {max_sel_date:%d.%m.%Y}", size="xs", c="dimmed"),
-    #                 ]
-    #             )
-
-    #             new_block = section_card(
-    #                 "Новые номенклатуры (за 30 дней)",
-    #                 dmc.Stack(
-    #                     gap=6,
-    #                     children=[
-    #                         header_row,
-    #                         dmc.ScrollArea(
-    #                             type="auto", scrollbarSize=8, h=160,
-    #                             styles={"viewport": {"overflowX": "hidden"}},
-    #                             children=dmc.List(new_items, withPadding=True, size="sm", spacing="xs"),
-    #                         ),
-    #                     ],
-    #                 ),
-    #                 badge="Fresh"
-    #             )
-    #         else:
-    #             new_block = section_card(
-    #                 "Новые номенклатуры (за 30 дней)",
-    #                 dmc.Alert("За выбранный период новых SKU не появилось.", color="gray", variant="light", radius="sm")
-    #             )
-    # else:
-    #     new_block = section_card(
-    #         "Новые номенклатуры (за 30 дней)",
-    #         dmc.Alert("Колонка init_date не найдена — невозможно определить новые SKU.", color="gray", variant="light", radius="sm")
-    #     )
     
     # === Новые номенклатуры (последние 30 дней от EOM) ===
     new_block = dmc.Box()
@@ -1762,125 +1817,7 @@ class SegmentMainWindow:
 
         return df
 
-    # def maketree(self, df_id, group):
 
-    #     df = load_df_from_redis(df_id)
-
-    #     if group != "parent_cat":
-    #         df["parent_cat"] = df[group]
-    #         df["parent_cat_id"] = df[f"{group}_id"]
-    #         df["parent_cat"] = df["parent_cat"].fillna("Нет данных")
-    #         df["cat"] = df["cat"].fillna("Нет категории")
-    #         df["subcat"] = df["subcat"].fillna("Нет подкатегории")
-    #         df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
-    #         df["cat_id"] = df["cat_id"].fillna(10_000_000)
-    #         df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
-    #         df["item_id"] = df["item_id"].fillna(10_000_001)
-    #         df["cat_id"] = df["parent_cat_id"].astype(str) + df["cat_id"].astype(str)
-    #         df["subcat_id"] = df["cat_id"].astype(str) + df["subcat_id"].astype(str)
-
-    #     else:
-    #         df["parent_cat"] = df["parent_cat"].fillna("Нет группы")
-    #         df["cat"] = df["cat"].fillna("Нет категории")
-    #         df["subcat"] = df["subcat"].fillna("Нет подкатегории")
-    #         df["parent_cat_id"] = df["parent_cat_id"].fillna(10_000_000)
-    #         df["cat_id"] = df["cat_id"].fillna(10_000_000)
-    #         df["subcat_id"] = df["subcat_id"].fillna(10_000_000)
-    #         df["item_id"] = df["item_id"].fillna(10_000_001)
-
-    #     df["amount"] = df.dt - df.cr
-    #     df["quant"] = df.quant_dt - df.quant_cr
-
-    #     df = df.pivot_table(
-    #         index=[
-    #             "parent_cat_id",
-    #             "parent_cat",
-    #             "cat_id",
-    #             "cat",
-    #             "subcat_id",
-    #             "subcat",
-    #             "fullname",
-    #             "item_id",
-    #         ],
-    #         # index='fullname',
-    #         values=["amount", "quant"],
-    #         aggfunc={
-    #             "amount": "sum",
-    #             "quant": "sum",
-    #         },
-    #     ).reset_index()
-    #     df["fullname"] = df["fullname"].apply(
-    #         lambda x: x if len(x) <= 50 else x[:50] + "..."
-    #     )
-
-    #     tree = []
-
-    #     def find_or_create(lst, value, label):
-    #         """Находит или создаёт узел"""
-    #         for node in lst:
-    #             if node["value"] == str(value):
-    #                 return node
-    #         node = {
-    #             "value": str(value),
-    #             "label": str(label),
-    #             "children": [],
-    #             "_count": 0,  # внутренний счётчик
-    #         }
-    #         lst.append(node)
-    #         return node
-
-    #     for _, row in df.iterrows():
-    #         pid, pname = row["parent_cat_id"], row["parent_cat"]
-    #         cid, cname = row["cat_id"], row["cat"]
-    #         sid, sname = row["subcat_id"], row["subcat"]
-    #         fullname = (row["item_id"], row["fullname"])
-
-    #         # Преобразуем 10_000_000 обратно в None
-    #         cid = None if cid == 10_000_000 else cid
-    #         sid = None if sid == 10_000_000 else sid
-
-    #         # 1 уровень — parent
-    #         parent_node = find_or_create(tree, pid, pname)
-
-    #         # 2 уровень — cat
-    #         if cid is not None:
-    #             cat_node = find_or_create(parent_node["children"], cid, cname)
-    #         else:
-    #             cat_node = parent_node
-
-    #         # 3 уровень — subcat
-    #         if sid is not None:
-    #             subcat_node = find_or_create(cat_node["children"], sid, sname)
-    #         else:
-    #             subcat_node = cat_node
-
-    #         # 4 уровень — fullname
-    #         subcat_node["children"].append(
-    #             {"value": str(fullname[0]), "label": str(fullname[1])}
-    #         )
-
-    #         # Увеличиваем счётчики на всех уровнях
-    #         parent_node["_count"] += 1
-    #         if cat_node is not parent_node:
-    #             cat_node["_count"] += 1
-    #         if subcat_node not in (parent_node, cat_node):
-    #             subcat_node["_count"] += 1
-
-    #     # Финальный проход для добавления (N) в label
-    #     def finalize_labels(lst):
-    #         for node in lst:
-    #             count = node.get("_count", 0)
-    #             if count > 0:
-    #                 node["label"] = f"{node['label']} ({count})"
-    #             # только если есть дети
-    #             if "children" in node and node["children"]:
-    #                 finalize_labels(node["children"])
-    #             # удаляем внутренний ключ
-    #             node.pop("_count", None)
-
-    #     finalize_labels(tree)
-
-    #     return tree
     
     
     def maketree(self, df_id, group, top_n=None, min_share=None):
@@ -2109,7 +2046,7 @@ class SegmentMainWindow:
                         id=self.details_conteiner_id,
                         fluid=True,
                          children=empty_placeholder(),
-                        # children=dmc.Paper("Выберите элементы слева", p="md", withBorder=True, radius="sm"),
+
                     ),
                 ),
             ],
@@ -2303,12 +2240,221 @@ class SegmentMainWindow:
                 return True, AG_MODAL.update_modal(d, start, end)
             
             return no_update, no_update
-            
-            
-            
         
         
         
+
+        @app.callback(
+            Output("pareto-download-xlsx", "data"),
+            Input("pareto-export-xlsx", "n_clicks"),
+            State(self.tree_id, "checked"),
+            State(self.df_store_id, "data"),
+            prevent_initial_call=True,
+        )
+        def export_pareto_xlsx(n, checked, store_data):
+            if not n or not checked or not store_data:
+                return no_update
+
+            md = get_items(checked, store_data["start"], store_data["end"])
+            if md is None or len(md) == 0:
+                return no_update
+
+            # ---------- 1) Подготовка данных ----------
+            x = md.copy()
+
+            # дата (для "последней продажи")
+            date_col = None
+            if "last_sales_date" in x.columns:
+                date_col = "last_sales_date"
+            elif "date" in x.columns:
+                date_col = "date"
+            elif "eom" in x.columns:
+                date_col = "eom"
+
+            if date_col:
+                x[date_col] = pd.to_datetime(x[date_col], errors="coerce")
+
+            # amount (выручка нетто)
+            if "amount" not in x.columns:
+                x["dt"] = pd.to_numeric(x.get("dt"), errors="coerce").fillna(0.0)
+                x["cr"] = pd.to_numeric(x.get("cr"), errors="coerce").fillna(0.0)
+                x["amount"] = x["dt"] - x["cr"]
+            else:
+                x["amount"] = pd.to_numeric(x["amount"], errors="coerce").fillna(0.0)
+
+            # qty (кол-во нетто)
+            if "quant" not in x.columns:
+                x["quant_dt"] = pd.to_numeric(x.get("quant_dt"), errors="coerce").fillna(0.0)
+                x["quant_cr"] = pd.to_numeric(x.get("quant_cr"), errors="coerce").fillna(0.0)
+                x["quant"] = x["quant_dt"] - x["quant_cr"]
+            else:
+                x["quant"] = pd.to_numeric(x["quant"], errors="coerce").fillna(0.0)
+
+            # --------- КЛЮЧ ДЛЯ ГРУППИРОВКИ (ВАЖНО!) ----------
+            # чтобы не склеивать разные товары с одинаковым fullname
+            has_item_id = "item_id" in x.columns
+            key_cols = ["item_id", "fullname"] if has_item_id else ["fullname"]
+
+            # 1) базовая агрегация: выручка, кол-во, средняя цена, последняя дата продажи
+            agg = {
+                "amount": ("amount", "sum"),
+                "qty": ("quant", "sum"),
+            }
+            if date_col:
+                agg["last_sale"] = (date_col, "max")
+
+            g = (
+                x.groupby(key_cols, as_index=False)
+                .agg(**agg)
+                .sort_values("amount", ascending=False)
+                .reset_index(drop=True)
+            )
+
+            # средняя цена за период (нетто)
+            g["avg_price"] = g["amount"] / g["qty"].replace(0, np.nan)
+
+            # доли (0..1)
+            total = float(g["amount"].sum()) if not g.empty else 0.0
+            g["share"] = (g["amount"] / total) if total > 0 else 0.0
+            g["cum_share"] = g["share"].cumsum()
+
+            g.insert(0, "rank", np.arange(1, len(g) + 1))
+            top30 = g.head(30).copy()
+
+            # порядок колонок для Excel (БЕЗ "Последней цены продажи")
+            cols = ["rank"]
+            if has_item_id:
+                cols += ["item_id"]
+            cols += ["fullname", "amount", "qty", "avg_price"]
+            if date_col:
+                cols.append("last_sale")
+            cols += ["share", "cum_share"]
+
+            rename_map = {
+                "rank": "Ранг",
+                "fullname": "Номенклатура",
+                "amount": "Выручка, ₽",
+                "qty": "Кол-во, шт",
+                "avg_price": "Средняя цена, ₽",
+                "last_sale": "Последняя продажа",
+                "share": "Доля выручки, %",
+                "cum_share": "Накопленная доля, %",
+            }
+            if has_item_id:
+                rename_map["item_id"] = "ID товара"
+
+            out = top30[cols].rename(columns=rename_map)
+
+            # ---------- 2) Excel через openpyxl ----------
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Парето (Топ-30)"
+
+            # Запишем датафрейм
+            for r in dataframe_to_rows(out, index=False, header=True):
+                ws.append(r)
+
+            # Стили
+            header_fill = PatternFill("solid", fgColor="1F4E79")  # темно-синий
+            header_font = Font(color="FFFFFF", bold=True)
+            header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            thin = Side(style="thin", color="D9D9D9")
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            # Шапка
+            for cell in ws[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = header_align
+                cell.border = border
+
+            # Фиксация шапки + фильтр
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+
+            # Карточный вид: границы + выравнивание
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                for cell in row:
+                    cell.border = border
+                    if cell.column == 1:  # Ранг
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                    else:
+                        if isinstance(cell.value, (int, float)) or hasattr(cell.value, "year"):
+                            cell.alignment = Alignment(horizontal="right", vertical="center")
+                        else:
+                            cell.alignment = Alignment(horizontal="left", vertical="center")
+
+            # ---------- 3) Форматы чисел по заголовкам ----------
+            headers = [c.value for c in ws[1]]
+            col_idx = {name: i + 1 for i, name in enumerate(headers)}
+
+            def col_letter(name: str) -> str:
+                return get_column_letter(col_idx[name])
+
+            # Деньги
+            for name in ("Выручка, ₽", "Средняя цена, ₽"):
+                if name in col_idx:
+                    L = col_letter(name)
+                    for cell in ws[L][1:]:
+                        cell.number_format = '#,##0'
+
+            # Кол-во
+            if "Кол-во, шт" in col_idx:
+                L = col_letter("Кол-во, шт")
+                for cell in ws[L][1:]:
+                    cell.number_format = '#,##0'
+
+            # Проценты (2 знака, т.к. share 0..1)
+            for name in ("Доля, %", "Накопленная доля, %"):
+                if name in col_idx:
+                    L = col_letter(name)
+                    for cell in ws[L][1:]:
+                        cell.number_format = '0.00%'
+
+            # Дата
+            if "Последняя продажа" in col_idx:
+                L = col_letter("Последняя продажа")
+                for cell in ws[L][1:]:
+                    cell.number_format = 'dd.mm.yyyy'
+
+            # ---------- 4) Зебра ----------
+            zebra_fill = PatternFill("solid", fgColor="F6F8FA")
+            for r in range(2, ws.max_row + 1):
+                if r % 2 == 0:
+                    for c in range(1, ws.max_column + 1):
+                        ws.cell(row=r, column=c).fill = zebra_fill
+
+            # ---------- 5) Градиент по выручке ----------
+            if "Выручка, ₽" in col_idx:
+                L = col_letter("Выручка, ₽")
+                ws.conditional_formatting.add(
+                    f"{L}2:{L}{ws.max_row}",
+                    ColorScaleRule(
+                        start_type="min", start_color="E8F5E9",
+                        mid_type="percentile", mid_value=50, mid_color="C8E6C9",
+                        end_type="max", end_color="81C784",
+                    )
+                )
+
+            # ---------- 6) Автоширина колонок ----------
+            for col in range(1, ws.max_column + 1):
+                max_len = 0
+                letter = get_column_letter(col)
+                for cell in ws[letter]:
+                    val = "" if cell.value is None else str(cell.value)
+                    max_len = max(max_len, len(val))
+                ws.column_dimensions[letter].width = min(max_len + 2, 60)
+
+            ws.row_dimensions[1].height = 22
+
+            # ---------- 7) Отдаём файл ----------
+            bio = BytesIO()
+            wb.save(bio)
+            bio.seek(0)
+
+            filename = f"Парето_топ30_{store_data['start']}_{store_data['end']}.xlsx"
+            return dcc.send_bytes(bio.getvalue(), filename)
+
         
         
         CATS_MANAGEMENT.register_callbacks(app)
