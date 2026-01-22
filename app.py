@@ -35,6 +35,7 @@ from pages.segment_analisis import SEGMENTS_LAYOUT, SEGMENT_DF_STORE, SEGMENTS_C
 from pages.planing import PLANING
 from pages.stores_page import STORES
 from pages.cats_page import CATS
+from pages.mtx import MATRIX
 from components import NoData, InDevNotice, ClickOnNotice
 from reporting.preview_modal import PREVIEW_MODAL, preview_callbacks
 
@@ -305,6 +306,7 @@ def main_app():
     PLANING.registered_callbacks(app)
     STORES.reistered_callbacks(app)
     CATS.registered_callbacks(app)
+    MATRIX.register_callbacks(app)
     preview_callbacks(app)
     # print(app.callback_map.keys())
 
@@ -313,7 +315,7 @@ def main_app():
     dash.register_page("Магазины", path="/Stores", layout=STORES.make_layout())
     dash.register_page("Категории", path="/Cats", layout=CATS.layout())
     dash.register_page("Сегментный анализ", path="/Segments", layout=SEGMENTS_LAYOUT)
-    dash.register_page("Матрица", path="/Matrix", layout=InDevNotice().in_dev_conteines)
+    dash.register_page("Матрица", path="/Matrix", layout=MATRIX.layout())
     dash.register_page("Планирование", path="/forecast", layout=PLANING.layout())
 
     app.layout = MainWnidow().page_layout
