@@ -85,22 +85,43 @@ class LeftSection:
             width=600,
             shadow="md",
             children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры для XYZ расчетов    🤷‍♂️")),
+                dmc.HoverCardTarget(dmc.Text("Параметры для XYZ расчетов    🤷")),
                 dmc.HoverCardDropdown(
                     dcc.Markdown(xyz_help,className='markdown-25')
                 ),
             ],
         )
         
-        rob_help = """
-        #### Ранкирование по спросу
-        Здесь устанавливаются коэффициент вариации для каждого товара.
-        Коэффициент вариации _cv_ это отношение стандарного отклонения _σ_ к среднему значению продаж _μ_.
-        __Чем ниже данный коэффициент, тем стабильнее спрос__
-        По умолчанию:
-        - рейтинг X присваевается товаром c _cv_ ≦ 0.8;
-        - рейтинг Y присваевается товаром c _cv_ > 0.8 и ≦ 1.8
-        - рейтинг Z присваевается товаром c _cv_ <  1.8 (Рваный и непостоянный спрос)
+        rob_help = r"""
+        #### ROB и SS опции
+        __ROB (Reorder Point / Reorder Level)__
+        
+        Уровень запаса, при достижении которого нужно размещать заказ, чтобы не допустить дефицита в период поставки. Фактически: _«когда заказывать»_.
+        
+        SS (Safety Stock)
+        
+        Страховой запас — резерв, покрывающий неопределённость спроса и/или срока поставки.
+        _Фактически: «буфер от случайных колебаний»_.
+        
+        Для расчета __ROB__ и __SS__
+        - устанавливается параметр Lead Time (_LT_) в месяцах по умолчанию если не указан _LT_ по данной позиции (_левое поле_).
+        - устанавливается параметр Service Level (_SL_) в процентах (_правое поле_)
+        
+        Желаемый уровень сервиса (Service Level)
+        - Например:
+            - 90% — допустимы частые дефициты
+            - 95% — классика
+            - 99% — дорого, но без сбоев
+        
+        **В итоге: Страховой запас (SS) и Уровень запаса (ROB) в штуках **
+
+           __SS__ = _z_ + _σLT_
+           
+           __ROB__ = __SS__ + _μLT_
+           
+            -  z — коэффициент сервиса  
+            - σLT — стандартное отклонение спроса за время поставки
+            - μLT - Средний спрос за время поставки 
                 
         """
         rob_hover = dmc.HoverCard(
@@ -108,13 +129,33 @@ class LeftSection:
             width=600,
             shadow="md",
             children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры для XYZ расчетов    🤷‍♂️")),
+                dmc.HoverCardTarget(dmc.Text("Параметры ROB и SS    🤷‍♂️")),
                 dmc.HoverCardDropdown(
-                    dcc.Markdown(xyz_help,className='markdown-25')
+                    dcc.Markdown(rob_help,className='markdown-25')
                 ),
             ],
         )
+        
+        
+        cat_help = """
+        #### Фильтр по группе и категориям
+        
+        __По умолчанию матрица расчитывается на все товары за заданный период времени.__
+        
+        Можно выбрать одну или несколько групп товаров и одну или нескольно категорий в выбранных группах, что бы расчитать матрицу только для выбранных групп и категорий.
                 
+        """
+        cat_help_hover = dmc.HoverCard(
+            withArrow=True,
+            width=600,
+            shadow="md",
+            children=[
+                dmc.HoverCardTarget(dmc.Text("Фильтр групп и категорий    🤷🏻")),
+                dmc.HoverCardDropdown(
+                    dcc.Markdown(cat_help,className='markdown-25')
+                ),
+            ],
+        )
         
         
         # --------------------------
@@ -191,7 +232,7 @@ class LeftSection:
             id=self.x_score_id,
         )
         y_acore_number_imput = dmc.NumberInput(
-            value=1.8,
+            value=1.3,
             min=0.25,
             max=3,
             step=0.1,
@@ -204,7 +245,7 @@ class LeftSection:
             id=self.y_score_id,
         )
         z_acore_number_imput = dmc.NumberInput(
-            value=1.8,
+            value=1.3,
             min=0.5,
             max=100,
             step=0.1,
@@ -277,7 +318,7 @@ class LeftSection:
         cats_ms_fieldset = dmc.Fieldset(
             children=[gr_mulyselect, cat_mulyselect],
             radius="sm",
-            legend="Фильтр групп и категорий",
+            legend=cat_help_hover
         )
 
         # Групировки
@@ -316,9 +357,9 @@ class LeftSection:
             id=self.lead_time_id,
         )
         sration_number_imput = dmc.NumberInput(
-            value=90,
+            value=95,
             min=70,
-            max=100,
+            max=99,
             step=1,
             allowDecimal=False,
             suffix="%",
@@ -337,16 +378,17 @@ class LeftSection:
                 )
             ],
             radius="sm",
-            legend=abc_ranking_hover,
+            legend=rob_hover,
         )
 
 
         # Кнопка запуска
 
         launch_btn = dmc.Button(
-            "Рассчитать",
+            "Рассчитать",           
             id=self.launch_batton_id,
             leftSection=DashIconify(icon="mynaui:rocket-solid", width=24),
+            fullWidth=True
         )
 
         # --------------------------
@@ -364,8 +406,8 @@ class LeftSection:
                 rob_fieldset,
                 dmc.Space(h=20),
                 cats_ms_fieldset,
-                dmc.Space(h=20),
-                groupby_sc_fieldset,
+                # dmc.Space(h=20),
+                # groupby_sc_fieldset,
                 dmc.Space(h=20),
                 launch_btn,
             ],
@@ -428,7 +470,7 @@ class LeftSection:
             prevent_initial_call=True,
         )
         def set_yz(x_val, y_val):
-            y_min = x_val + 1
+            y_min = x_val + 0.5
             z = 0
             if y_val > y_min:
                 z = y_val
@@ -468,10 +510,11 @@ class RightSection:
     def matrix_ag_grid(self,df:pd.DataFrame,rrgrid_className):
         
         #Это список всех полей
-        df_columns_list = ['item_id', 'amount', 'date_json', 'quant_json', 'article', 
-                           'fullname', 'cat_id', 'cat_name', 'subcat_id', 'sc_name', 
-                           'share', 'cum_share', 'abc', 'mean_month', 'std_month', 'cv', 
-                           'months_count', 'xyz']
+        df_columns_list = ['item_id', 'amount', 'quant', 'date_json', 'quant_json', 'article', 'fullname', 
+                           'cat_id', 'cat_name', 'subcat_id', 'sc_name', 'share', 'cum_share', 'abc', 
+                           'ls_quant', 'ls_date', 'mean_month', 'std_month', 'cv', 'month_count', 
+                           'max_month', 'min_month', 'missing_months', 'min_date', 'max_date', 
+                           'sales_period_months', 'xyz', 'mean_amount', 'share_mean']
         
         #Спецификация полей dag
         matrix_dag_cols_spec = [
@@ -531,28 +574,28 @@ class RightSection:
                     {
                         "headerName": "Номенклатура",
                         "field": "fullname",
-                        "minWidth": 220,
+                        "minWidth": 240,
                         "type": "leftAligned",
                         "cellClass": "ag-firstcol-bg",
                         "headerClass": "ag-center-header",
-                        #  "pinned": "left",
+                        "pinned": "left",
                     },
                     {
                         "headerName": "Категория",
                         "field": "cat_name",
                         "minWidth": 220,
                         "type": "leftAligned",
-                        "cellClass": "ag-firstcol-bg",
-                        "headerClass": "ag-center-header",
+                        # "cellClass": "ag-firstcol-bg",
+                        # "headerClass": "ag-center-header",
                         #  "pinned": "left",
                     },
                     {
-                        "headerName": "Категория",
+                        "headerName": "Подкатегория",
                         "field": "sc_name",
                         "minWidth": 220,
                         "type": "leftAligned",
-                        "cellClass": "ag-firstcol-bg",
-                        "headerClass": "ag-center-header",
+                        # "cellClass": "ag-firstcol-bg",
+                        # "headerClass": "ag-center-header",
                         #  "pinned": "left",
                     },
                 ]
@@ -568,43 +611,142 @@ class RightSection:
                         "headerName": "Выручка",
                         "field": "amount",
                         "valueFormatter": {"function": "RUB(params.value)"},
-                        "cellClass": "ag-firstcol-bg",
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
                     },
                     {
                         "headerName": "Доля выручка",
                         "field": "share",
                         "valueFormatter": {"function": "FormatPercent(params.value)"},
-                        "cellClass": "ag-firstcol-bg",
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                        "width": 100, 
+                        
                          
                     },
                     {
-                        "headerName": "Ср мес продажи(шт)",
+                        "headerName": "Ср. выручка",
+                        "field": "mean_amount",
+                        "valueFormatter": {"function": "RUB(params.value)"},
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Доля в ср выручке",
+                        "field": "share_mean",
+                        "valueFormatter": {"function": "FormatPercent(params.value)"},
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                        "width": 100, 
+                        
+                         
+                    },
+                    {
+                        "headerName": "Кол-во",
+                        "field": "quant",
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Ср. μ (ед)",
                         "field": "mean_month",
-                        "minWidth": 100,
-                        "type": "leftAligned",
-                        "cellClass": "ag-firstcol-bg",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
                         "headerClass": "ag-center-header",
+                        
                     },
                     {
-                        "headerName": "Ст отклонение",
+                        "headerName": "Ст откл. σ ",
                         "field": "std_month",
-                        "minWidth": 100,
-                        "type": "leftAligned",
-                        "cellClass": "ag-firstcol-bg",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
                         "headerClass": "ag-center-header",
                     },
                     {
-                        "headerName": "Коэф вариации",
+                        "headerName": "CV Квар.",
                         "field": "cv",
-                        "minWidth": 100,
-                        "type": "leftAligned",
-                        "cellClass": "ag-firstcol-bg",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
                         "headerClass": "ag-center-header",
                     },
+                    {
+                        "headerName": "Макс. (ед)",
+                        "field": "max_month",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Мин. (ед)",
+                        "field": "min_month",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "headerClass": "ag-center-header",
+                    },
+                ]
+            },
+                    
+                    
+            {
+                "headerName": "Даты",
+                "groupId": "stats",
+                "marryChildren": True,
+                "headerClass": "ag-center-header",
+                "children": [
+                    {
+                        "headerName": "Нач. период",
+                        "field": "min_date",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Конеч. период",
+                        "field": "max_date",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Qпер. (мес)",
+                        "field": "sales_period_months",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        # "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "headerClass": "ag-center-header",
+                    },
+                    
+                    
+                    {
+                        "headerName": "Нулевые периоды (мес)",
+                        "field": "missing_months",
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        # "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "headerClass": "ag-center-header",
+                    },
+                    {
+                        "headerName": "Периоды с продажами (мес)",
+                        "field": "month_count",
+                        "minWidth": 100,
+                        "width": 140,
+                        "cellStyle": {"textAlign": "center"},
+                        # "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "headerClass": "ag-center-header",
+                    },
+                    
+                    
                 ]
             }           
             
         ]
+            
         
         RowData = df.to_dict("records")
                 

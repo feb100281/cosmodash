@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 from data import ENGINE, get_connection
-import json
+import locale
 
+locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 # для выгрузки категорий и групп
 def fletch_cats() ->pd.DataFrame:
     q = """
@@ -19,22 +20,33 @@ def fletch_cats() ->pd.DataFrame:
 def fletch_data(start, end,cats) ->pd.DataFrame:
     cat = "" if not cats else f"and i.cat_id in ({cats})"
     q = f"""
+    WITH sales as (
+    select
+    item_id,
+    LAST_DAY(date) AS month_end,
+    sum(dt-cr) as amount,
+    sum(quant_dt-quant_cr) as quant
+    from sales_salesdata
+    group by item_id, month_end
+    )
+
     SELECT 
     s.item_id,
-    sum(s.dt-s.cr) as amount,
-    JSON_ARRAYAGG(s.date) AS date_json,
-    JSON_ARRAYAGG(s.quant_dt-s.quant_cr) AS quant_json,
+    sum(s.amount) as amount,
+    sum(s.quant) as quant,
+    JSON_ARRAYAGG(s.month_end) AS date_json,
+    JSON_ARRAYAGG(quant) AS quant_json,
     coalesce(case when i.article = "" then 'Нет арт.' else i.article end , 'Нет арт.') as article,
     i.fullname,
     i.cat_id,
     cat.name as cat_name,
     i.subcat_id,
     coalesce(sc.name,'Нет подкатегории') as sc_name
-    from sales_salesdata as s
+    from sales as s
     join corporate_items as i on i.id = s.item_id
     left join corporate_cattree as cat on cat.id = i.cat_id
     left join corporate_subcategory as sc on sc.id = i.subcat_id
-    where date between '{start}' and '{end}' {cat}  
+    where month_end between '{start}' and '{end}' {cat}  
     group by s.item_id, article, i.fullname,i.cat_id,i.subcat_id
     """
     return pd.read_sql(q, ENGINE)
@@ -68,93 +80,20 @@ def assign_abc(df: pd.DataFrame, thresholds) -> pd.DataFrame:
 
     return df
 
-def xyz_stats_from_json(
-    start: str | pd.Timestamp,
-    end: str | pd.Timestamp,
-    date_json,
-    quant_json,
-    *,
-    end_inclusive: bool = False,
-    fill_missing_days: bool = True,
-) -> dict:
-    """
-    start, end: границы периода.
-    date_json, quant_json: либо list (уже распарсенные), либо JSON-строка.
-    end_inclusive=False: timeline = [start, end) как в SQL: date >= start and date < end
-    fill_missing_days=True: добавляем нули в дни без продаж
+def count_month_gaps(dates):
+    # dates: list[datetime64] (могут быть NaT)
+    ds = [d for d in dates if pd.notna(d)]
+    if len(ds) <= 1:
+        return 0
 
-    Возвращает: mean_month, std_month, cv, months_count
-    """
+    s = pd.Series(ds).sort_values()
 
-    # --- normalize inputs (json string -> python list) ---
-    if isinstance(date_json, str):
-        date_list = json.loads(date_json)
-    else:
-        date_list = date_json
+    # приводим к "месячным" индексам (целое число месяцев)
+    m = s.dt.year * 12 + s.dt.month
 
-    if isinstance(quant_json, str):
-        quant_list = json.loads(quant_json)
-    else:
-        quant_list = quant_json
-
-    if not date_list or not quant_list:
-        return {"mean_month": 0.0, "std_month": 0.0, "cv": np.nan, "months_count": 0}
-
-    if len(date_list) != len(quant_list):
-        raise ValueError(f"date_json and quant_json lengths differ: {len(date_list)} vs {len(quant_list)}")
-
-    # --- parse dates ---
-    s = pd.Timestamp(start)
-    e = pd.Timestamp(end)
-    if end_inclusive:
-        timeline = pd.date_range(s, e, freq="D")
-    else:
-        # [start, end)
-        timeline = pd.date_range(s, e - pd.Timedelta(days=1), freq="D") if e > s else pd.DatetimeIndex([])
-
-    # --- sales df (daily facts) ---
-    sales = pd.DataFrame({"date": pd.to_datetime(date_list), "qty": pd.to_numeric(quant_list, errors="coerce")})
-    sales = sales.dropna(subset=["date", "qty"])
-
-    # если в json есть несколько записей в один день — суммируем
-    sales = sales.groupby("date", as_index=False)["qty"].sum()
-
-    # ограничим периодом (на всякий)
-    if end_inclusive:
-        sales = sales[(sales["date"] >= s) & (sales["date"] <= e)]
-    else:
-        sales = sales[(sales["date"] >= s) & (sales["date"] < e)]
-
-    if sales.empty and fill_missing_days:
-        # всё нули
-        months = pd.Series(0.0, index=timeline).resample("MS").sum()
-    else:
-        if fill_missing_days:
-            tl = pd.DataFrame({"date": timeline})
-            daily = tl.merge(sales, on="date", how="left").fillna({"qty": 0.0})
-        else:
-            daily = sales.copy()
-
-        daily = daily.sort_values("date").set_index("date")
-
-        # --- monthly aggregation ---
-        # "MS" = month start; sum -> месячные продажи
-        months = daily["qty"].resample("MS").sum()
-
-    # --- stats ---
-    mean_month = float(months.mean()) if len(months) else 0.0
-    std_month = float(months.std(ddof=0)) if len(months) else 0.0  # ddof=0 стабильнее для коротких рядов
-    cv = (std_month / mean_month) if mean_month != 0 else np.nan
-
-    return {
-        "mean_month": mean_month,
-        "std_month": std_month,
-        "cv": float(cv) if cv == cv else np.nan,  # NaN-safe
-        "months_count": int(len(months)),
-    }
-
-
-
+    diffs = m.diff().dropna()          # разницы между соседними месяцами
+    gaps = (diffs - 1).clip(lower=0)   # сколько пустых месяцев между ними
+    return int(gaps.sum())
 
 
 def matrix_calculation(start,end,cats,threholds) -> pd.DataFrame:
@@ -162,22 +101,44 @@ def matrix_calculation(start,end,cats,threholds) -> pd.DataFrame:
     df = fletch_data(start,end,cats)
     df = assign_abc(df,threholds)
     
+    df["ls_quant"] = (
+    df["quant_json"]
+      .str.strip("[]")
+      .str.split(",")
+      .apply(lambda xs: [float(x) for x in xs])
+)
+    df["ls_date"] = (
+    df["date_json"]
+      .str.strip("[]")
+      .str.split(",")
+      .apply(lambda xs: [pd.to_datetime(x.strip().strip("'").strip('"'), errors="coerce") for x in xs])
+)
+    
     out = df.copy()
 
-    stats = out.apply(
-        lambda r: xyz_stats_from_json(
-            start=start,
-            end=end,
-            date_json=r["date_json"],
-            quant_json=r["quant_json"],
-            end_inclusive=False,
-            fill_missing_days=True,
-        ),
-        axis=1,
+    
+    
+    out['mean_month'] = out['ls_quant'].map(np.mean)
+    out['std_month'] = out['ls_quant'].map(np.std)
+    out['cv'] = out['std_month'] / out['mean_month']
+    out['month_count'] = out['ls_quant'].map(np.count_nonzero)
+    out['max_month'] = out['ls_quant'].map(np.max)
+    out['min_month'] = out['ls_quant'].map(np.min)
+    out["missing_months"] = out["ls_date"].apply(count_month_gaps)
+    
+    out["min_date"] = out["ls_date"].map(
+    lambda x: min(d for d in x if pd.notna(d))
+)
+
+    out["max_date"] = out["ls_date"].map(
+        lambda x: max(d for d in x if pd.notna(d))
     )
 
-    stats_df = pd.DataFrame(list(stats))
-    out = pd.concat([out.reset_index(drop=True), stats_df], axis=1)
+    out["sales_period_months"] = (
+        (out["max_date"].dt.year * 12 + out["max_date"].dt.month)
+    - (out["min_date"].dt.year * 12 + out["min_date"].dt.month)
+    + 1
+    )
     
     x_thr = threholds["x"] 
     y_thr = threholds["y"] 
@@ -191,16 +152,65 @@ def matrix_calculation(start,end,cats,threholds) -> pd.DataFrame:
         default="Z",
     )
     
-    out = out.sort_values(by=["abc","cv"])
+    out['mean_amount'] = out['amount'] / out['sales_period_months']
+    out = out.sort_values("mean_amount", ascending=False)
+    total = out["mean_amount"].sum()
+    out["share_mean"] = out["mean_amount"] / total
+
+    # накопительная доля
+    out["cum_share"] = out["share_mean"].cumsum()
     
-    pt = out.pivot_table(
-    index="abc",
-    columns="xyz",
-    values="fullname",
-    aggfunc=lambda x: "\n".join(sorted(x))
-).reset_index()
+    # ABC
+    a_thr = threholds["a"] / 100
+    b_thr = threholds["b"] / 100
+
+    out["abc"] = np.select(
+        [
+            out["cum_share"] <= a_thr,
+            out["cum_share"] <= (b_thr+a_thr),
+        ],
+        ["A", "B"],
+        default="C",
+    )
     
-    # print(out.columns.to_list())
+    check_date = pd.to_datetime(end)
+    
+    out["abc"] = np.where(
+        out['sales_period_months'] == 1,
+        np.where(
+            out['max_date'] == check_date,
+            'Новый',
+            'Редкий'
+            
+        ),  out["abc"]
+    )
+    
+    out["xyz"] = np.where(
+        out['sales_period_months'] == 1,
+        np.where(
+            out['max_date'] == check_date,
+            'Новый',
+            'Редкий'
+            
+        ),  out["xyz"]
+    )
+    
+    
+    
+    out = out.sort_values(
+        by=["abc", "xyz", "share"],
+        ascending=[True, True, False]
+    )
+    
+    
+    
+    
+    
+    out["min_date"] = out["min_date"].dt.strftime("%b %Y").str.capitalize()
+    out["max_date"] = out["max_date"].dt.strftime("%b %Y").str.capitalize()
+  
+  
+    print(out.columns.to_list())
     return out
    
     
