@@ -93,17 +93,17 @@ class LeftSection:
         )
         
         rob_help = r"""
-        #### ROB и SS опции
-        __ROB (Reorder Point / Reorder Level)__
+        #### ROP и SS опции
+        __ROP (Reorder Point / Reorder Level)__
         
         Уровень запаса, при достижении которого нужно размещать заказ, чтобы не допустить дефицита в период поставки. Фактически: _«когда заказывать»_.
         
-        SS (Safety Stock)
+        __SS (Safety Stock)__
         
         Страховой запас — резерв, покрывающий неопределённость спроса и/или срока поставки.
         _Фактически: «буфер от случайных колебаний»_.
         
-        Для расчета __ROB__ и __SS__
+        Для расчета __ROP__ и __SS__
         - устанавливается параметр Lead Time (_LT_) в месяцах по умолчанию если не указан _LT_ по данной позиции (_левое поле_).
         - устанавливается параметр Service Level (_SL_) в процентах (_правое поле_)
         
@@ -117,7 +117,7 @@ class LeftSection:
 
            __SS__ = _z_ + _σLT_
            
-           __ROB__ = __SS__ + _μLT_
+           __ROP__ = __SS__ + _μLT_
            
             -  z — коэффициент сервиса  
             - σLT — стандартное отклонение спроса за время поставки
@@ -129,7 +129,7 @@ class LeftSection:
             width=600,
             shadow="md",
             children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры ROB и SS    🤷‍♂️")),
+                dmc.HoverCardTarget(dmc.Text("Параметры ROP и SS    🤷‍♂️")),
                 dmc.HoverCardDropdown(
                     dcc.Markdown(rob_help,className='markdown-25')
                 ),
@@ -218,9 +218,9 @@ class LeftSection:
 
         # Кнопки управления XYZ
         x_acore_number_imput = dmc.NumberInput(
-            value=0.8,
+            value=0.5,
             min=0.1,
-            max=2,
+            max=0.8,
             step=0.1,
             allowDecimal=True,
             prefix="≤",
@@ -232,9 +232,9 @@ class LeftSection:
             id=self.x_score_id,
         )
         y_acore_number_imput = dmc.NumberInput(
-            value=1.3,
-            min=0.25,
-            max=3,
+            value=1,
+            min=0.5,
+            max=1.5,
             step=0.1,
             allowDecimal=True,
             leftSection=DashIconify(
@@ -245,7 +245,7 @@ class LeftSection:
             id=self.y_score_id,
         )
         z_acore_number_imput = dmc.NumberInput(
-            value=1.3,
+            value=1,
             min=0.5,
             max=100,
             step=0.1,
@@ -341,7 +341,7 @@ class LeftSection:
             legend="Групировки номенклатур",
         )
         
-        # Параметры ROB и SS        
+        # Параметры ROP и SS        
         lt_number_imput = dmc.NumberInput(
             value=2,
             min=0.5,
@@ -503,8 +503,8 @@ class RightSection:
         self.layout = dmc.Container(children=[], id=self.right_conteiner_id, fluid=True)
     
     #Метод по получению мартицы
-    def get_matrix(self, start, end, cat, threholds)->pd.DataFrame:
-        return matrix_calculation(start, end, cat, threholds)
+    def get_matrix(self, start, end, cat, threholds,lt,sr)->pd.DataFrame:
+        return matrix_calculation(start, end, cat, threholds,lt,sr)
     
     #Метод для построения ag-grid
     def matrix_ag_grid(self,df:pd.DataFrame,rrgrid_className):
@@ -739,11 +739,34 @@ class RightSection:
                         "cellStyle": {"textAlign": "center"},
                         # "valueFormatter": {"function": "TwoDecimal(params.value)"},
                         "headerClass": "ag-center-header",
-                    },
+                    },                    
                     
                     
                 ]
-            }           
+            },
+            {
+                "headerName": "Запасы и стоки (SS и ROP)",
+                "groupId": "stats",
+                "marryChildren": True,
+                "headerClass": "ag-center-header",
+                "children": [
+                    
+                    {
+                        "headerName": "Страх. запас (ед) (SS)",
+                        "field": "ss",
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },  
+                    {
+                        "headerName": "ROP (ед)",
+                        "field": "rop",
+                        "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ag-center-header",
+                    },  
+                ]
+            }                 
             
         ]
             
@@ -779,10 +802,10 @@ class RightSection:
     
     
     #Метод делаем layout c компонентыми после расчетов матрицы !!!! Вот сдесь свистелки / перделки можно делать
-    def maxrix_layout(self, start, end, cat, threholds,rrgrid_className) ->dmc.Container:
+    def maxrix_layout(self, start, end, cat, threholds,rrgrid_className,lt,sr) ->dmc.Container:
         
         # Загружаем df с матрицей
-        df = self.get_matrix(start, end, cat, threholds)
+        df = self.get_matrix(start, end, cat, threholds,lt,sr)
         
         matrix_dag = self.matrix_ag_grid(df,rrgrid_className)
         
@@ -849,10 +872,13 @@ class MainWindow:
             State(self.ls.gr_multyselect_id, "value"),
             State(self.ls.cat_multyselect_id, "value"),
             State(self.mslider_id, "value"),
+            State(self.ls.lead_time_id,"value"),
+            State(self.ls.servis_ratio_id,"value"),
             State("theme_switch", "checked"),
+            
             prevent_initial_call=True,
         )
-        def get_matrix(nclicks, a, b, c, x, y, z, grs, cats, ms, theme):
+        def get_matrix(nclicks, a, b, c, x, y, z, grs, cats, ms,lt,sr, theme):
 
             def fined_cats_if_gr():
 
@@ -871,5 +897,5 @@ class MainWindow:
                 if gr and not cat:
                     cat = ",".join(map(str, fined_cats_if_gr()))                
 
-            return self.rs.maxrix_layout(start,end,cat,threholds,rrgrid_className)
+            return self.rs.maxrix_layout(start,end,cat,threholds,rrgrid_className,lt,sr)
             
