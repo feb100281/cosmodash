@@ -10,6 +10,9 @@ from dash import dcc, Input, Output, State, no_update
 # from .forecast import SEASONS_OPTIONS, forecast
 from components import NoData, MonthSlider, DATES
 
+from .barcode_details import fetch_barcode_breakdown, render_barcode_panel
+from .data import ENGINE
+
 import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
@@ -42,6 +45,21 @@ class LeftSection:
         self.groupby_sc_id = "groupby_sc_id_for_matrix"
 
         self.launch_batton_id = "launch_batton_id_for_matrix"
+        
+        self.abc_help_open_id = "abc_help_open_id_for_matrix"
+        self.abc_help_modal_id = "abc_help_modal_id_for_matrix"
+        self.xyz_help_open_id = "xyz_help_open_id_for_matrix"
+        self.xyz_help_modal_id = "xyz_help_modal_id_for_matrix"
+
+        self.rop_help_open_id = "rop_help_open_id_for_matrix"
+        self.rop_help_modal_id = "rop_help_modal_id_for_matrix"
+
+        self.filter_help_open_id = "filter_help_open_id_for_matrix"
+        self.filter_help_modal_id = "filter_help_modal_id_for_matrix"
+        
+
+
+
 
         
         # --------------------------
@@ -57,17 +75,32 @@ class LeftSection:
         - рейтинг C присваевается товаром которые делают последние 25% до общей выручки 
                 
         """
-        abc_ranking_hover = dmc.HoverCard(
-            withArrow=True,
-            width=600,
-            shadow="md",
-            children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры для ABC расчетов    🤷🏻‍♀️")),
-                dmc.HoverCardDropdown(
-                    dcc.Markdown(abc_help,className='markdown-25')
-                ),
-            ],
+        abc_help_open_btn = dmc.ActionIcon(
+            dmc.Text("💡", fw=700),
+            id=self.abc_help_open_id,
+            variant="subtle",
+            style={"cursor": "pointer"},
         )
+
+        abc_help_legend = dmc.Group(
+            [
+                abc_help_open_btn,
+                dmc.Text("Параметры ABC", size="sm"),
+
+            ],
+            gap=6,
+            wrap="nowrap",
+        )
+
+        abc_help_modal = dmc.Modal(
+            id=self.abc_help_modal_id,
+            title="Параметры ABC — ранжирование по выручке",
+            children=dcc.Markdown(abc_help, className="markdown-25"),
+            opened=False,
+            size="lg",
+            centered=True,
+        )
+
         
         xyz_help = """
         #### Ранкирование по спросу
@@ -80,17 +113,32 @@ class LeftSection:
         - рейтинг Z присваевается товаром c _cv_ <  1.8 (Рваный и непостоянный спрос)
                 
         """
-        xyz_ranking_hover = dmc.HoverCard(
-            withArrow=True,
-            width=600,
-            shadow="md",
-            children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры для XYZ расчетов    🤷")),
-                dmc.HoverCardDropdown(
-                    dcc.Markdown(xyz_help,className='markdown-25')
-                ),
-            ],
+        xyz_help_open_btn = dmc.ActionIcon(
+            dmc.Text("💡", fw=700),
+            id=self.xyz_help_open_id,
+            variant="subtle",
+            style={"cursor": "pointer"},
         )
+
+        xyz_help_legend = dmc.Group(
+            [
+                xyz_help_open_btn,
+                dmc.Text("Параметры XYZ", size="sm"),
+ 
+            ],
+            gap=6,
+            wrap="nowrap",
+        )
+
+        xyz_help_modal = dmc.Modal(
+            id=self.xyz_help_modal_id,
+            title="Параметры XYZ — ранжирование по спросу",
+            children=dcc.Markdown(xyz_help, className="markdown-25"),
+            opened=False,
+            size="lg",
+            centered=True,
+        )
+
         
         rob_help = r"""
         #### ROP и SS опции
@@ -124,17 +172,32 @@ class LeftSection:
             - μLT - Средний спрос за время поставки 
                 
         """
-        rob_hover = dmc.HoverCard(
-            withArrow=True,
-            width=600,
-            shadow="md",
-            children=[
-                dmc.HoverCardTarget(dmc.Text("Параметры ROP и SS    🤷‍♂️")),
-                dmc.HoverCardDropdown(
-                    dcc.Markdown(rob_help,className='markdown-25')
-                ),
-            ],
+        rop_help_open_btn = dmc.ActionIcon(
+            dmc.Text("💡", fw=700),
+            id=self.rop_help_open_id,
+            variant="subtle",
+            style={"cursor": "pointer"},
         )
+
+        rop_help_legend = dmc.Group(
+            [   
+                rop_help_open_btn,
+                dmc.Text("Параметры ROP и SS", size="sm"),
+                
+            ],
+            gap=6,
+            wrap="nowrap",
+        )
+
+        rop_help_modal = dmc.Modal(
+            id=self.rop_help_modal_id,
+            title="ROP и Safety Stock — параметры расчёта",
+            children=dcc.Markdown(rob_help, className="markdown-25"),
+            opened=False,
+            size="lg",
+            centered=True,
+        )
+
         
         
         cat_help = """
@@ -145,24 +208,39 @@ class LeftSection:
         Можно выбрать одну или несколько групп товаров и одну или нескольно категорий в выбранных группах, что бы расчитать матрицу только для выбранных групп и категорий.
                 
         """
-        cat_help_hover = dmc.HoverCard(
-            withArrow=True,
-            width=600,
-            shadow="md",
-            children=[
-                dmc.HoverCardTarget(dmc.Text("Фильтр групп и категорий    🤷🏻")),
-                dmc.HoverCardDropdown(
-                    dcc.Markdown(cat_help,className='markdown-25')
-                ),
-            ],
+        filter_help_open_btn = dmc.ActionIcon(
+            dmc.Text("⚙️", fw=700),
+            id=self.filter_help_open_id,
+            variant="subtle",
+            style={"cursor": "pointer"},
         )
+
+        filter_help_legend = dmc.Group(
+            [
+                filter_help_open_btn,
+                dmc.Text("Фильтр", size="sm"),
+          
+            ],
+            gap=6,
+            wrap="nowrap",
+        )
+
+        filter_help_modal = dmc.Modal(
+            id=self.filter_help_modal_id,
+            title="Фильтр по группам и категориям",
+            children=dcc.Markdown(cat_help, className="markdown-25"),
+            opened=False,
+            size="lg",
+            centered=True,
+        )
+
         
         
         # --------------------------
         # Прописываем компоненты
         # --------------------------
 
-        # Кнопки управления ABC
+# Кнопки управления ABC
         a_acore_number_imput = dmc.NumberInput(
             value=50,
             min=35,
@@ -208,15 +286,20 @@ class LeftSection:
         )
         abc_fieldset = dmc.Fieldset(
             children=[
-                dmc.Group(
-                    [a_acore_number_imput, b_acore_number_imput, c_acore_number_imput]
-                )
+                dmc.SimpleGrid(
+                    cols=3,
+                    spacing="xs",
+                    children=[a_acore_number_imput, b_acore_number_imput, c_acore_number_imput],
+                ),
+                abc_help_modal,
             ],
             radius="sm",
-            legend=abc_ranking_hover,
+            legend=abc_help_legend,
         )
 
-        # Кнопки управления XYZ
+
+
+# Кнопки управления XYZ
         x_acore_number_imput = dmc.NumberInput(
             value=0.5,
             min=0.1,
@@ -261,15 +344,20 @@ class LeftSection:
         )
         xyz_fieldset = dmc.Fieldset(
             children=[
-                dmc.Group(
-                    [x_acore_number_imput, y_acore_number_imput, z_acore_number_imput]
-                )
+                dmc.SimpleGrid(
+                    cols=3,
+                    spacing="xs",
+                    children=[x_acore_number_imput, y_acore_number_imput, z_acore_number_imput],
+                ),
+                xyz_help_modal,
             ],
             radius="sm",
-            legend=xyz_ranking_hover,
+            legend=xyz_help_legend,
         )
 
-        # Мультиселекты по группам и категориям
+
+
+# Мультиселекты по группам и категориям
 
         self.cats_df = fletch_cats()
 
@@ -300,28 +388,29 @@ class LeftSection:
             radius=0,
             clearable=True,
             searchable=True,
-            leftSection=DashIconify(icon="tabler:building-store"),
+            leftSection=DashIconify(icon="tabler:folders"),
         )
 
         cat_mulyselect = dmc.MultiSelect(
             id=self.cat_multyselect_id,
-            label="Магазин",
+            label="Категория",
             placeholder="Выберите категорию",
             data=[],
             w="100%",
             radius=0,
             clearable=True,
             searchable=True,
-            leftSection=DashIconify(icon="tabler:building-store"),
+            leftSection=DashIconify(icon="tabler:tag"),
         )
 
         cats_ms_fieldset = dmc.Fieldset(
-            children=[gr_mulyselect, cat_mulyselect],
+            children=[gr_mulyselect, cat_mulyselect, filter_help_modal],
             radius="sm",
-            legend=cat_help_hover
+            legend=filter_help_legend
         )
 
-        # Групировки
+
+ # Групировки
 
         sc_groupby_switch = dmc.Switch(
             onLabel="ON",
@@ -341,7 +430,7 @@ class LeftSection:
             legend="Групировки номенклатур",
         )
         
-        # Параметры ROP и SS        
+# Параметры ROP и SS        
         lt_number_imput = dmc.NumberInput(
             value=2,
             min=0.5,
@@ -373,13 +462,17 @@ class LeftSection:
         
         rob_fieldset = dmc.Fieldset(
             children=[
-                dmc.Group(
-                    [lt_number_imput, sration_number_imput]
-                )
+                dmc.SimpleGrid(
+                    cols=2,
+                    spacing="md",
+                    children=[lt_number_imput, sration_number_imput],
+                ),
+                rop_help_modal,
             ],
             radius="sm",
-            legend=rob_hover,
+            legend=rop_help_legend,
         )
+
 
 
         # Кнопка запуска
@@ -423,6 +516,8 @@ class LeftSection:
             prevent_initial_call=True,
         )
         def filter_cat_ms(gr_list):
+            if not gr_list:
+                return []
             gr_list_int = [int(x) for x in gr_list]
             df = self.cats_df[self.cats_df["gr_id"].isin(gr_list_int)]
 
@@ -486,6 +581,46 @@ class LeftSection:
         )
         def set_z(y_val):
             return y_val
+        ### --- ОТКРЫТИЕ МОДАЛОК --- ###
+        @app.callback(
+            Output(self.abc_help_modal_id, "opened"),
+            Input(self.abc_help_open_id, "n_clicks"),
+            State(self.abc_help_modal_id, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_abc_help(n, opened):
+            return not opened
+        
+        @app.callback(
+            Output(self.xyz_help_modal_id, "opened"),
+            Input(self.xyz_help_open_id, "n_clicks"),
+            State(self.xyz_help_modal_id, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_xyz_help(n, opened):
+            return not opened
+
+
+        @app.callback(
+            Output(self.rop_help_modal_id, "opened"),
+            Input(self.rop_help_open_id, "n_clicks"),
+            State(self.rop_help_modal_id, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_rop_help(n, opened):
+            return not opened
+
+
+        @app.callback(
+            Output(self.filter_help_modal_id, "opened"),
+            Input(self.filter_help_open_id, "n_clicks"),
+            State(self.filter_help_modal_id, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_filter_help(n, opened):
+            return not opened
+
+
 
 
 # Панель с самой матрицей
@@ -494,13 +629,36 @@ class RightSection:
         
         # ID компонентов
         self.right_conteiner_id = "right_conteiner_id_for_matrix"
-        
+        self.content_id = f"{self.right_conteiner_id}-content"
         self.matrix_dag_id = "matrix-ag-greed-id"
+
+        self.barcode_drawer_id = "barcode_drawer_id"
+        self.barcode_drawer_body_id = "barcode_drawer_body_id"
+
+        self.layout = dmc.Container(
+            children=[
+                # ✅ сюда будет рендериться матрица по кнопке "Рассчитать"
+                dmc.Container(id=self.content_id, fluid=True),
+
+                # ✅ drawer всегда есть в DOM
+                dmc.Drawer(
+                    id=self.barcode_drawer_id,
+                    title="Детализация по штрихкодам",
+                    opened=False,
+                    position="right",
+                    size=520,
+                    overlayProps={"opacity": 0.45, "blur": 2},
+                    children=dmc.Container(id=self.barcode_drawer_body_id, fluid=True),
+                ),
+            ],
+            id=self.right_conteiner_id,
+            fluid=True,
+        )
         
         
         
-        # Инициируем пустую layout 
-        self.layout = dmc.Container(children=[], id=self.right_conteiner_id, fluid=True)
+        # # Инициируем пустую layout 
+        # self.layout = dmc.Container(children=[], id=self.right_conteiner_id, fluid=True)
     
     #Метод по получению мартицы
     def get_matrix(self, start, end, cat, threholds,lt,sr)->pd.DataFrame:
@@ -801,6 +959,7 @@ class RightSection:
                     "pagination": True, 
                     "paginationPageSize": 20,
                     "suppressRowClickSelection": False,
+                    "rowClass": "clickable-row",
                     #"enableCellTextSelection": True,
                     "ensureDomOrder": True,
                     #"onRowDoubleClicked": {"function": "function(params) { window.dashAgGridFunctions.onRowDoubleClick(params); }"}
@@ -879,7 +1038,8 @@ class MainWindow:
         self.ls.register_callbacks(app)
 
         @app.callback(
-            Output(self.rs.right_conteiner_id, "children"),
+            # Output(self.rs.right_conteiner_id, "children"),
+            Output(self.rs.content_id, "children"),
             Input(self.ls.launch_batton_id, "n_clicks"),
             State(self.ls.a_score_id, "value"),
             State(self.ls.b_score_id, "value"),
@@ -916,4 +1076,28 @@ class MainWindow:
                     cat = ",".join(map(str, fined_cats_if_gr()))                
 
             return self.rs.maxrix_layout(start,end,cat,threholds,rrgrid_className,lt,sr)
-            
+        
+        
+    
+    
+        @app.callback(
+            Output(self.rs.barcode_drawer_id, "opened"),
+            Output(self.rs.barcode_drawer_body_id, "children"),
+            Input(self.rs.matrix_dag_id, "selectedRows"),
+            State(self.mslider_id, "value"),
+            prevent_initial_call=True,
+        )
+        def open_barcode_details(selected_rows, ms):
+            if not selected_rows:
+                return False, no_update
+
+            row = selected_rows[0]
+            item_id = int(row["item_id"])
+            fullname = row.get("fullname", "")
+
+            start, end = id_to_months(ms[0], ms[1])
+
+            df_bc = fetch_barcode_breakdown(ENGINE, item_id=item_id, start=start, end=end)
+            panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
+
+            return True, panel
