@@ -104,12 +104,12 @@ def render_barcode_panel(df: pd.DataFrame, title: str):
     return dmc.Stack(
         [
             dmc.Text(title, fw=700),
-            dmc.Alert(
-                "Внимание: разрез по штрихкодам показан как список штрихкодов товара. "
-                "Продажи агрегируются по item_id (в sales_salesdata нет barcode_id).",
-                color="yellow",
-                variant="light",
-            ),
+            # dmc.Alert(
+            #     "Внимание: разрез по штрихкодам показан как список штрихкодов товара. "
+            #     "Продажи агрегируются по item_id (в sales_salesdata нет barcode_id).",
+            #     color="yellow",
+            #     variant="light",
+            # ),
             table,
         ],
         gap="sm",
