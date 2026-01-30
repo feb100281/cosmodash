@@ -31,6 +31,19 @@ def fletch_data(start, end, cats) -> pd.DataFrame:
     sum(quant_dt-quant_cr) as quant
     from sales_salesdata
     group by item_id, month_end
+    ),
+    barcode as (
+    select 
+	i.id,
+	i.article,
+	i.fullname,
+	count(distinct b.barcode) as barcode_count,
+	GROUP_CONCAT(b.barcode) as barcode
+
+	from corporate_items_barcode as t
+	join corporate_barcode as b on b.id = t.barcode_id
+	join corporate_items as i on i.id = t.items_id
+	group by i.id, i.fullname
     )
 
     SELECT 
@@ -44,11 +57,14 @@ def fletch_data(start, end, cats) -> pd.DataFrame:
     i.cat_id,
     cat.name as cat_name,
     i.subcat_id,
-    coalesce(sc.name,'Нет подкатегории') as sc_name
+    coalesce(sc.name,'Нет подкатегории') as sc_name,
+    bc.barcode 
+
     from sales as s
     join corporate_items as i on i.id = s.item_id
     left join corporate_cattree as cat on cat.id = i.cat_id
     left join corporate_subcategory as sc on sc.id = i.subcat_id
+    left join barcode as bc on bc.id = s.item_id
     where month_end between '{start}' and '{end}' {cat}  
     group by s.item_id, article, i.fullname,i.cat_id,i.subcat_id
     """

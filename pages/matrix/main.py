@@ -514,7 +514,7 @@ class RightSection:
                            'cat_id', 'cat_name', 'subcat_id', 'sc_name', 'share', 'cum_share', 'abc', 
                            'ls_quant', 'ls_date', 'mean_month', 'std_month', 'cv', 'month_count', 
                            'max_month', 'min_month', 'missing_months', 'min_date', 'max_date', 
-                           'sales_period_months', 'xyz', 'mean_amount', 'share_mean']
+                           'sales_period_months', 'xyz', 'mean_amount', 'share_mean','barcode']
         
         #Спецификация полей dag
         matrix_dag_cols_spec = [
@@ -574,6 +574,24 @@ class RightSection:
                     {
                         "headerName": "Номенклатура",
                         "field": "fullname",
+                        "minWidth": 240,
+                        "type": "leftAligned",
+                        "cellClass": "ag-firstcol-bg",
+                        "headerClass": "ag-center-header",
+                        "pinned": "left",
+                    },
+                    {
+                        "headerName": "Артикль",
+                        "field": "article",
+                        "minWidth": 240,
+                        "type": "leftAligned",
+                        "cellClass": "ag-firstcol-bg",
+                        "headerClass": "ag-center-header",
+                        "pinned": "left",
+                    },
+                    {
+                        "headerName": "Штрихкода",
+                        "field": "barcode",
                         "minWidth": 240,
                         "type": "leftAligned",
                         "cellClass": "ag-firstcol-bg",
