@@ -1,6 +1,7 @@
 # barcode_details.py
 import pandas as pd
 import dash_mantine_components as dmc
+from data import ENGINE
 
 
 def fetch_barcode_breakdown(engine, item_id: int, start: str, end: str) -> pd.DataFrame:
@@ -17,24 +18,18 @@ def fetch_barcode_breakdown(engine, item_id: int, start: str, end: str) -> pd.Da
     start/end — строки 'YYYY-MM-DD'
     """
     q = """
-    WITH sales AS (
-        SELECT
-            s.item_id,
-            SUM(s.dt - s.cr) AS amount,
-            SUM(s.quant_dt - s.quant_cr) AS quant
-        FROM sales_salesdata s
-        WHERE s.item_id = %(item_id)s
-          AND LAST_DAY(s.date) BETWEEN %(start)s AND %(end)s
-        GROUP BY s.item_id
-    )
-    SELECT
-        b.barcode AS barcode,
-        sales.amount AS amount,
-        sales.quant AS quant
-    FROM sales
-    JOIN corporate_items_barcode t ON t.items_id = sales.item_id
-    JOIN corporate_barcode b ON b.id = t.barcode_id
-    ORDER BY b.barcode
+    select
+        coalesce(b.barcode,'нет штрихкода') as barcode, -- если не нужен b.barcode только
+        sum(t.dt-t.cr) as amount,
+        sum(t.quant_dt - t.quant_cr) as quant
+
+        from sales_salesdata as t
+        left join corporate_barcode as b on b.id = t.barcode_id
+        WHERE t.item_id = %(item_id)s
+          AND LAST_DAY(t.date) BETWEEN %(start)s AND %(end)s -- and b.barcode is not null добавить если не нужен без штрихкода
+        group by b.barcode
+        ORDER BY b.barcode       
+   
     """
 
     df = pd.read_sql(q, engine, params={"item_id": int(item_id), "start": start, "end": end})
