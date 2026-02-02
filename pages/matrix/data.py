@@ -54,6 +54,7 @@ def fletch_data(start, end, cats) -> pd.DataFrame:
     JSON_ARRAYAGG(quant) AS quant_json,
     coalesce(case when i.article = "" then 'Нет арт.' else i.article end , 'Нет арт.') as article,
     i.fullname,
+    coalesce(manu.name, 'Нет производителя') as manu,
     i.cat_id,
     cat.name as cat_name,
     i.subcat_id,
@@ -62,11 +63,13 @@ def fletch_data(start, end, cats) -> pd.DataFrame:
 
     from sales as s
     join corporate_items as i on i.id = s.item_id
+    left join corporate_itemmanufacturer as manu on manu.id = i.manufacturer_id
+
     left join corporate_cattree as cat on cat.id = i.cat_id
     left join corporate_subcategory as sc on sc.id = i.subcat_id
     left join barcode as bc on bc.id = s.item_id
     where month_end between '{start}' and '{end}' {cat}  
-    group by s.item_id, article, i.fullname,i.cat_id,i.subcat_id
+    group by s.item_id, article, i.fullname, manu.name, i.cat_id,i.subcat_id
     """
     return pd.read_sql(q, ENGINE)
 

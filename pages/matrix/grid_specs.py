@@ -44,6 +44,7 @@ def get_matrix_column_defs() -> List[Dict[str, Any]]:
             "groupId": "product",
             "marryChildren": True,
             "headerClass": "ag-center-header",
+            "openByDefault": False, 
             "children": [
                 {
                     "headerName": "Номенклатура",
@@ -60,23 +61,36 @@ def get_matrix_column_defs() -> List[Dict[str, Any]]:
                     "minWidth": 240,
                     "type": "leftAligned",
                 },
+                
+                {
+                    "headerName": "Производитель",
+                    "field": "manu",
+                    "minWidth": 200,
+                    "filter": True,
+                    "type": "leftAligned",
+        
+                },
+
                 {
                     "headerName": "Штрихкода",
                     "field": "barcode",
                     "minWidth": 240,
                     "type": "leftAligned",
+                     "columnGroupShow": "open",
                 },
                 {
                     "headerName": "Категория",
                     "field": "cat_name",
                     "minWidth": 220,
                     "type": "leftAligned",
+                     "columnGroupShow": "open",
                 },
                 {
                     "headerName": "Подкатегория",
                     "field": "sc_name",
                     "minWidth": 220,
                     "type": "leftAligned",
+          
                 },
             ],
         },
@@ -93,6 +107,14 @@ def get_matrix_column_defs() -> List[Dict[str, Any]]:
                     "cellStyle": {"textAlign": "center"},
                     "headerClass": "ag-center-header",
                 },
+                {
+                    "headerName": "Кол-во",
+                    "field": "quant",
+                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
+                    "cellStyle": {"textAlign": "center"},
+                    "headerClass": "ag-center-header",
+                },
+                          
                 {
                     "headerName": "Доля выручка",
                     "field": "share",
@@ -115,14 +137,9 @@ def get_matrix_column_defs() -> List[Dict[str, Any]]:
                     "cellStyle": {"textAlign": "center"},
                     "headerClass": "ag-center-header",
                     "width": 100,
+                     "columnGroupShow": "open",
                 },
-                {
-                    "headerName": "Кол-во",
-                    "field": "quant",
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
+      
                 {
                     "headerName": "Ср. μ (ед)",
                     "field": "mean_month",
@@ -146,6 +163,7 @@ def get_matrix_column_defs() -> List[Dict[str, Any]]:
                     "cellStyle": {"textAlign": "center"},
                     "valueFormatter": {"function": "TwoDecimal(params.value)"},
                     "headerClass": "ag-center-header",
+                     "columnGroupShow": "open",
                 },
                 {
                     "headerName": "Макс. (ед)",

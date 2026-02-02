@@ -1,5 +1,7 @@
+# pages/matrix/main.py
 import math
 import locale
+from io import StringIO
 
 import pandas as pd
 import dash_ag_grid as dag
@@ -16,6 +18,8 @@ from .help_texts import ABC_HELP_MD, XYZ_HELP_MD, ROP_HELP_MD, FILTER_HELP_MD
 from .ui_builders import build_help
 from .ids import MatrixIds, MatrixRightIds
 from .empty_state import render_matrix_empty_state
+from .export_excel import build_matrix_excel_bytes
+from datetime import datetime
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 
@@ -403,19 +407,28 @@ class RightSection:
     def __init__(self):
         self.ids = MatrixRightIds()
 
+        
         self.layout = dmc.Container(
             children=[
+                # ✅ 1) тут будет header (пока пусто)
+                dmc.Container(id="matrix_header_container", fluid=True),
+
+                dmc.Space(h=16),
+
+                # ✅ 2) дальше как было — content / loading
                 dcc.Loading(
                     id=self.ids.loading,
                     type="graph",
                     fullscreen=False,
                     children=dmc.Container(
-                            id=self.ids.content,
-                            fluid=True,
-                            children=render_matrix_empty_state(),
-                        ),
-
+                        id=self.ids.content,
+                        fluid=True,
+                        children=render_matrix_empty_state(),
+                    ),
                 ),
+
+                dcc.Download(id=self.ids.download),
+
                 dmc.Drawer(
                     id=self.ids.barcode_drawer,
                     title="Детализация по штрихкодам",
@@ -429,6 +442,8 @@ class RightSection:
             id=self.ids.right_container,
             fluid=True,
         )
+
+
 
     def get_matrix(self, start, end, cat, threholds, lt, sr) -> pd.DataFrame:
         return matrix_calculation(start, end, cat, threholds, lt, sr)
@@ -449,19 +464,52 @@ class RightSection:
             dangerously_allow_code=True,
         )
 
-    def maxrix_layout(self, start, end, cat, threholds, rrgrid_className, lt, sr) -> dmc.Container:
-        df = self.get_matrix(start, end, cat, threholds, lt, sr)
+    def maxrix_layout(self, df: pd.DataFrame, rrgrid_className: str) -> dmc.Container:
         matrix_dag = self.matrix_ag_grid(df, rrgrid_className)
-
-        return dmc.Container(
-            [
+        return dmc.Container([matrix_dag, dmc.Space(h=40)], fluid=True)
+    
+    def build_header(self):
+        return dmc.Group(
+            justify="space-between",
+            align="center",
+            children=[
                 dmc.Title("Расчет ассортиментной матрицы", order=3),
-                dmc.Space(h=20),
-                matrix_dag,
-                dmc.Space(h=40),
+                dmc.Group(
+                    gap="sm",
+                    align="center",
+                    children=[
+                        dmc.MultiSelect(
+                            id=self.ids.manu_ms,
+                            placeholder="Все производители",
+                            data=[],
+                            value=[],
+                            clearable=True,
+                            searchable=True,
+                            w=260,
+                            size="sm",
+                            radius="md",
+                            leftSection=DashIconify(icon="tabler:building-factory-2", width=18),
+                        ),
+                        dmc.Badge("0/0", id=self.ids.manu_badge, variant="light", radius="sm"),
+                        dmc.Tooltip(
+                            label="Скачать Excel",
+                            withArrow=True,
+                            children=dmc.ActionIcon(
+                                DashIconify(icon="mdi:file-excel-outline", width=18),
+                                id=self.ids.download_btn,
+                                variant="light",
+                                color="green",
+                                radius="md",
+                                size="lg",
+                                disabled=True,
+                            ),
+                        ),
+                    ],
+                ),
             ],
-            fluid=True,
         )
+
+
 
 
 # --------------------------
@@ -477,10 +525,11 @@ class MainWindow:
     def layout(self):
         return dmc.Container(
             children=[
-                dmc.Title("Создание и анализ ассортиментой матрицы", order=1, c="indigo"),
+                dmc.Title("Создание и анализ ассортиментой матрицы", order=1, c="blue"),
                 dmc.Text("В данном разделе можно создавать и анализировать ассортиментные матрицы", size="xs"),
                 dmc.Space(h=40),
                 self.mslider,
+                dcc.Store(id=self.rs.ids.store),
                 dmc.Space(h=20),
                 dmc.Grid(
                     [
@@ -496,7 +545,9 @@ class MainWindow:
         self.ls.register_callbacks(app)
 
         @app.callback(
+            Output("matrix_header_container", "children"),
             Output(self.rs.ids.content, "children"),
+            Output(self.rs.ids.store, "data"),
             Input(self.ls.ids.launch, "n_clicks"),
             State(self.ls.ids.a_score, "value"),
             State(self.ls.ids.b_score, "value"),
@@ -514,7 +565,7 @@ class MainWindow:
         )
         def get_matrix(nclicks, a, b, c, x, y, z, grs, cats, ms, lt, sr, theme):
             if not nclicks:
-                return no_update
+                return no_update, no_update, no_update
 
             def find_cats_if_gr():
                 gr_list_int = [int(v) for v in (grs or [])]
@@ -526,13 +577,105 @@ class MainWindow:
 
             gr = None if not grs else ",".join(grs)
             cat = None if not cats else ",".join(cats)
-
-            rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
-
             if gr and not cat:
                 cat = ",".join(map(str, find_cats_if_gr()))
 
-            return self.rs.maxrix_layout(start, end, cat, threholds, rrgrid_className, lt, sr)
+            rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
+
+            df_matrix = matrix_calculation(start, end, cat, threholds, lt, sr)
+            store_json = df_matrix.to_json(date_format="iso", orient="records")
+
+            # header создаём (он уже содержит manu_ms, badge, download_btn)
+            header = self.rs.build_header()
+
+            # таблица
+            content = self.rs.maxrix_layout(df_matrix, rrgrid_className)
+
+            return header, content, store_json
+
+        
+        @app.callback(
+            Output(self.rs.ids.matrix_grid, "rowData"),
+            Output(self.rs.ids.manu_badge, "children"),
+            Output(self.rs.ids.download_btn, "disabled"),
+            Input(self.rs.ids.manu_ms, "value"),
+            State(self.rs.ids.store, "data"),
+        )
+        def filter_by_manu(manu_values, store_json):
+            if not store_json:
+                return no_update, no_update, no_update
+
+            df = pd.read_json(StringIO(store_json), orient="records")
+
+            manu_all = (
+                df["manu"].fillna("Нет производителя").astype(str)
+                .sort_values(key=lambda s: s.str.lower())
+                .unique()
+                .tolist()
+            )
+            total = len(manu_all)
+
+            if manu_values:
+                df = df[df["manu"].fillna("Нет производителя").astype(str).isin(manu_values)]
+                badge = f"{len(manu_values)}/{total}"
+            else:
+                badge = f"Все/{total}"
+
+            return df.to_dict("records"), badge, False
+        
+        
+        
+        @app.callback(
+            Output(self.rs.ids.manu_ms, "data"),
+            Input(self.rs.ids.store, "data"),
+            prevent_initial_call=True,
+        )
+        def fill_manu_options(store_json):
+            if not store_json:
+                return []
+
+            df = pd.read_json(StringIO(store_json), orient="records")
+            manu_list = (
+                df["manu"].fillna("Нет производителя").astype(str)
+                .sort_values(key=lambda s: s.str.lower())
+                .unique()
+                .tolist()
+            )
+            return [{"value": m, "label": m} for m in manu_list]
+
+
+
+
+
+
+
+        @app.callback(
+            Output(self.rs.ids.download, "data"),
+            Input(self.rs.ids.download_btn, "n_clicks"),
+            State(self.rs.ids.store, "data"),
+            State(self.rs.ids.manu_ms, "value"),
+            State(self.mslider_id, "value"),
+            prevent_initial_call=True,
+        )
+        def download_excel(n, store_json, manu_values, ms):
+            if not n or not store_json:
+                return no_update
+
+            df_matrix = pd.read_json(StringIO(store_json), orient="records")
+
+
+            if manu_values:
+                df_matrix = df_matrix[df_matrix["manu"].fillna("Нет производителя").astype(str).isin(manu_values)]
+
+            start, end = id_to_months(ms[0], ms[1])
+
+            xlsx_bytes = build_matrix_excel_bytes(ENGINE, df_matrix=df_matrix, start=start, end=end)
+
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            filename = f"matrix_{start}_{end}_{stamp}.xlsx"
+            return dcc.send_bytes(xlsx_bytes, filename)
+
+
 
         @app.callback(
             Output(self.rs.ids.barcode_drawer, "opened"),

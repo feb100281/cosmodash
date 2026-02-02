@@ -1,6 +1,7 @@
 # matrix/ids.py
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class MatrixIds:
     # ABC
@@ -43,10 +44,24 @@ class MatrixIds:
 class MatrixRightIds:
     right_container: str = "right_conteiner_id_for_matrix"
     matrix_grid: str = "matrix-ag-greed-id"
+
     barcode_drawer: str = "barcode_drawer_id"
     barcode_drawer_body: str = "barcode_drawer_body_id"
     loading: str = "matrix_loading"
 
+    # download (RIGHT side)
+    download_btn: str = "matrix_download_excel_btn"
+    download: str = "matrix_download_excel"
+    
+    # manufacturer filter (RIGHT header)
+    manu_ms: str = "matrix_manu_ms"
+    manu_badge: str = "matrix_manu_badge"
+    store: str = "matrix_store"
+
+
     @property
     def content(self) -> str:
         return f"{self.right_container}-content"
+
+    
+
