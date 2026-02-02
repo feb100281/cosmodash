@@ -794,6 +794,13 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
     Лист "Динамика (json)" НЕ создаётся.
     """
     df_raw = df_matrix.copy()
+    
+    SERVICE_COLS = {
+    "item_id", "subcat_id", "cat_id",
+    "date_json", "quant_json",
+    "ls_quant", "ls_date", "is_quant", "is_date",
+}
+
 
     if "item_id" not in df_raw.columns:
         raise ValueError("В df_matrix нет колонки 'item_id' — экспорт невозможен.")
@@ -882,6 +889,8 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
 
     # детализация по датам + по одному штрихкоду в детальной строке
     df_matrix_export = _make_matrix_dates_hierarchical(df_matrix_export, df_raw)
+    df_matrix_xlsx = df_matrix_export.drop(columns=[c for c in SERVICE_COLS if c in df_matrix_export.columns], errors="ignore")
+
 
     # штрихкоды: иерархия
     df_barcodes = _make_barcodes_hierarchical(df_barcodes)
@@ -891,9 +900,10 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
     manufacturer_sheets: List[str] = []
 
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df_matrix_export.to_excel(writer, index=False, sheet_name="Матрица")
+        df_matrix_xlsx.to_excel(writer, index=False, sheet_name="Матрица")
         df_barcodes.to_excel(writer, index=False, sheet_name="Штрихкоды")
-        manufacturer_sheets = _build_manufacturers_sheets(writer, df_matrix_export)
+        manufacturer_sheets = _build_manufacturers_sheets(writer, df_matrix_xlsx)
+
 
     out.seek(0)
     wb = load_workbook(out)
