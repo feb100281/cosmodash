@@ -53,6 +53,10 @@ class MatrixRightIds:
     download_btn: str = "matrix_download_excel_btn"
     download: str = "matrix_download_excel"
     
+    #  CSV download (FAST)
+    download_csv_btn: str = "matrix_download_csv_btn"
+    download_csv: str = "matrix_download_csv"
+    
     # manufacturer filter (RIGHT header)
     manu_ms: str = "matrix_manu_ms"
     manu_badge: str = "matrix_manu_badge"

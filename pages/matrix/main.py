@@ -428,6 +428,7 @@ class RightSection:
                 ),
 
                 dcc.Download(id=self.ids.download),
+                dcc.Download(id=self.ids.download_csv),      # быстрый CSV
 
                 dmc.Drawer(
                     id=self.ids.barcode_drawer,
@@ -504,6 +505,21 @@ class RightSection:
                                 disabled=True,
                             ),
                         ),
+                        
+                        dmc.Tooltip(
+    label="Скачать CSV (быстро)",
+    withArrow=True,
+    children=dmc.ActionIcon(
+        DashIconify(icon="mdi:file-delimited-outline", width=18),
+        id=self.ids.download_csv_btn,
+        variant="light",
+        color="blue",
+        radius="md",
+        size="lg",
+        disabled=True,
+    ),
+),
+
                     ],
                 ),
             ],
@@ -598,12 +614,13 @@ class MainWindow:
             Output(self.rs.ids.matrix_grid, "rowData"),
             Output(self.rs.ids.manu_badge, "children"),
             Output(self.rs.ids.download_btn, "disabled"),
+            Output(self.rs.ids.download_csv_btn, "disabled"),
             Input(self.rs.ids.manu_ms, "value"),
             State(self.rs.ids.store, "data"),
         )
         def filter_by_manu(manu_values, store_json):
             if not store_json:
-                return no_update, no_update, no_update
+                return no_update, no_update, no_update, no_update
 
             df = pd.read_json(StringIO(store_json), orient="records")
 
@@ -621,7 +638,8 @@ class MainWindow:
             else:
                 badge = f"Все/{total}"
 
-            return df.to_dict("records"), badge, False
+            return df.to_dict("records"), badge, False, False
+
         
         
         
@@ -673,7 +691,37 @@ class MainWindow:
 
             stamp = datetime.now().strftime("%Y%m%d_%H%M")
             filename = f"matrix_{start}_{end}_{stamp}.xlsx"
-            return dcc.send_bytes(xlsx_bytes, filename)
+            # return dcc.send_bytes(xlsx_bytes, filename)
+            return dcc.send_bytes(lambda buffer: buffer.write(xlsx_bytes), filename)
+        
+        
+        @app.callback(
+            Output(self.rs.ids.download_csv, "data"),
+            Input(self.rs.ids.download_csv_btn, "n_clicks"),
+            State(self.rs.ids.store, "data"),
+            State(self.rs.ids.manu_ms, "value"),
+            State(self.mslider_id, "value"),
+            prevent_initial_call=True,
+        )
+        def download_csv(n, store_json, manu_values, ms):
+            if not n or not store_json:
+                return no_update
+
+            df = pd.read_json(StringIO(store_json), orient="records")
+
+            if manu_values:
+                df = df[df["manu"].fillna("Нет производителя").astype(str).isin(manu_values)]
+
+            # если не хочешь служебные колонки
+            df = df.drop(columns=["date_json", "quant_json", "ls_quant", "ls_date", "is_quant", "is_date"], errors="ignore")
+
+            start, end = id_to_months(ms[0], ms[1])
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            filename = f"matrix_{start}_{end}_{stamp}.csv"
+
+            return dcc.send_data_frame(df.to_csv, filename, index=False, sep="|", encoding="utf-8-sig")
+
+
 
 
 
