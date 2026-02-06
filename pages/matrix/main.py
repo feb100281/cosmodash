@@ -14,7 +14,7 @@ from .barcode_details import fetch_barcode_breakdown, render_barcode_panel
 from .data import ENGINE, fletch_cats, matrix_calculation
 
 from .grid_specs import get_matrix_column_defs, get_matrix_grid_options
-from .help_texts import ABC_HELP_MD, XYZ_HELP_MD, ROP_HELP_MD, FILTER_HELP_MD
+from .help_texts import ABC_HELP_MD, XYZ_HELP_MD, ROP_HELP_MD, FILTER_HELP_MD, MATRIX_ZONES_HELP_MD
 from .ui_builders import build_help
 from .ids import MatrixIds, MatrixRightIds
 from .empty_state import render_matrix_empty_state
@@ -71,6 +71,16 @@ class LeftSection:
             modal_title="Фильтр по группам и категориям",
             markdown_text=FILTER_HELP_MD,
         )
+        
+        zones_help_legend, zones_help_modal = build_help(
+            open_btn_id=self.ids.zones_help_open,
+            modal_id=self.ids.zones_help_modal,
+            icon_text="🎯",
+            legend_text="Как читать зоны",
+            modal_title="Матрица ABC-XYZ — смысл зон",
+            markdown_text=MATRIX_ZONES_HELP_MD,
+        )
+
 
         # --------------------------
         # Controls
@@ -166,6 +176,7 @@ class LeftSection:
             children=[
                 dmc.SimpleGrid(cols=3, spacing="xs", children=[x_score, y_score, z_score]),
                 xyz_help_modal,
+                zones_help_modal,
             ],
             radius="sm",
             legend=xyz_help_legend,
@@ -213,6 +224,17 @@ class LeftSection:
             radius="sm",
             legend=filter_help_legend,
         )
+        
+        zones_help_block = dmc.Group(
+            gap="xs",
+            align="center",
+            children=[
+                # dmc.Text("Как читать зоны", fw=600),
+                zones_help_legend, 
+            ],
+        )
+
+
 
         # --- Groupby switch (пока не используешь — но пусть будет) ---
         groupby_sc_switch = dmc.Switch(
@@ -281,6 +303,8 @@ class LeftSection:
                 abc_fieldset,
                 dmc.Space(h=20),
                 xyz_fieldset,
+                dmc.Space(h=20),
+                zones_help_block, 
                 dmc.Space(h=20),
                 rop_fieldset,
                 dmc.Space(h=20),
@@ -398,6 +422,16 @@ class LeftSection:
         )
         def toggle_filter_help(n, opened):
             return not opened
+        
+        @app.callback(
+            Output(self.ids.zones_help_modal, "opened"),
+            Input(self.ids.zones_help_open, "n_clicks"),
+            State(self.ids.zones_help_modal, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_zones_help(n, opened):
+            return not opened
+
 
 
 # --------------------------

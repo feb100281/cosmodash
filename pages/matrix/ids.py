@@ -38,6 +38,9 @@ class MatrixIds:
 
     filter_help_open: str = "filter_help_open_id_for_matrix"
     filter_help_modal: str = "filter_help_modal_id_for_matrix"
+    
+    zones_help_open: str = "zones_help_open_id_for_matrix"
+    zones_help_modal: str = "zones_help_modal_id_for_matrix"
 
 
 @dataclass(frozen=True)
