@@ -23,6 +23,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import ColorScaleRule
 
 
+from .empty_state import render_segments_empty_state
+
+
+
 
 
 from data import (
@@ -178,36 +182,7 @@ def fmt_pct(x):
     try: return f"{float(x):.2f}%".replace(".", ",")
     except: return "0,00%"
 
-def empty_placeholder():
-    return dmc.Paper(
-        withBorder=True, radius="md", p="xl",
-        style={
-            "borderStyle": "dashed",
-            "background": "linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.04))",
-        },
-        children=dmc.Center(
-            dmc.Stack(
-                gap="sm", align="center",
-                children=[
-                    dmc.ThemeIcon(
-                        DashIconify(icon="solar:cursor-square-linear", width=88),
-                        size=96, radius="xl", variant="light", color="blue"
-                    ),
-                    dmc.Title("Выберите позиции для анализа", order=3),
-                    dmc.Text(
-                        "Отметьте группы/бренды/производителей слева, и здесь появится таблица.",
-                        c="dimmed", size="sm", ta="center", maw=520
-                    ),
-                    dmc.Group(gap="xs", justify="center", mt="xs",
-                              children=[
-                                  dmc.Badge("Шаг 1: выберите период", variant="outline", radius="xs",),
-                                  dmc.Badge("Шаг 2: отметьте категории", variant="outline", radius="xs",),
-                                  dmc.Badge("Шаг 3: смотрите детали", variant="outline", radius="xs",),
-                              ]),
-                ],
-            )
-        ),
-    )
+
     
 NBSP_THIN = "\u202F"  # тонкий неразрывный пробел
 def fmt_grouped(v: float, money=False):
@@ -2045,7 +2020,8 @@ class SegmentMainWindow:
                     children=dmc.Container(
                         id=self.details_conteiner_id,
                         fluid=True,
-                         children=empty_placeholder(),
+            
+                         children=render_segments_empty_state(),
 
                     ),
                 ),
@@ -2183,7 +2159,8 @@ class SegmentMainWindow:
         )
         def get_data(checked, theme, store_data):
             if not checked:
-                return  empty_placeholder(), True, True, True
+                return render_segments_empty_state(), True, True, True
+                
 
             rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
             md = get_items(checked, store_data['start'], store_data['end'])

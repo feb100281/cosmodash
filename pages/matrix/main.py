@@ -14,7 +14,7 @@ from .barcode_details import fetch_barcode_breakdown, render_barcode_panel
 from .data import ENGINE, fletch_cats, matrix_calculation
 
 from .grid_specs import get_matrix_column_defs, get_matrix_grid_options
-from .help_texts import ABC_HELP_MD, XYZ_HELP_MD, ROP_HELP_MD, FILTER_HELP_MD
+from .help_texts import ABC_HELP_MD, XYZ_HELP_MD, ROP_HELP_MD, FILTER_HELP_MD, MATRIX_ZONES_HELP_MD
 from .ui_builders import build_help
 from .ids import MatrixIds, MatrixRightIds
 from .empty_state import render_matrix_empty_state
@@ -71,6 +71,16 @@ class LeftSection:
             modal_title="Фильтр по группам и категориям",
             markdown_text=FILTER_HELP_MD,
         )
+        
+        zones_help_legend, zones_help_modal = build_help(
+            open_btn_id=self.ids.zones_help_open,
+            modal_id=self.ids.zones_help_modal,
+            icon_text="🎯",
+            legend_text="Как читать зоны",
+            modal_title="Матрица ABC-XYZ — смысл зон",
+            markdown_text=MATRIX_ZONES_HELP_MD,
+        )
+
 
         # --------------------------
         # Controls
@@ -166,6 +176,7 @@ class LeftSection:
             children=[
                 dmc.SimpleGrid(cols=3, spacing="xs", children=[x_score, y_score, z_score]),
                 xyz_help_modal,
+                zones_help_modal,
             ],
             radius="sm",
             legend=xyz_help_legend,
@@ -213,6 +224,17 @@ class LeftSection:
             radius="sm",
             legend=filter_help_legend,
         )
+        
+        zones_help_block = dmc.Group(
+            gap="xs",
+            align="center",
+            children=[
+                # dmc.Text("Как читать зоны", fw=600),
+                zones_help_legend, 
+            ],
+        )
+
+
 
         # --- Groupby switch (пока не используешь — но пусть будет) ---
         groupby_sc_switch = dmc.Switch(
@@ -281,6 +303,8 @@ class LeftSection:
                 abc_fieldset,
                 dmc.Space(h=20),
                 xyz_fieldset,
+                dmc.Space(h=20),
+                zones_help_block, 
                 dmc.Space(h=20),
                 rop_fieldset,
                 dmc.Space(h=20),
@@ -398,6 +422,16 @@ class LeftSection:
         )
         def toggle_filter_help(n, opened):
             return not opened
+        
+        @app.callback(
+            Output(self.ids.zones_help_modal, "opened"),
+            Input(self.ids.zones_help_open, "n_clicks"),
+            State(self.ids.zones_help_modal, "opened"),
+            prevent_initial_call=True,
+        )
+        def toggle_zones_help(n, opened):
+            return not opened
+
 
 
 # --------------------------
@@ -428,10 +462,11 @@ class RightSection:
                 ),
 
                 dcc.Download(id=self.ids.download),
+                dcc.Download(id=self.ids.download_csv),      # быстрый CSV
 
                 dmc.Drawer(
                     id=self.ids.barcode_drawer,
-                    title="Детализация по штрихкодам",
+                    title=None,
                     opened=False,
                     position="right",
                     size=520,
@@ -504,6 +539,21 @@ class RightSection:
                                 disabled=True,
                             ),
                         ),
+                        
+                        dmc.Tooltip(
+    label="Скачать CSV (быстро)",
+    withArrow=True,
+    children=dmc.ActionIcon(
+        DashIconify(icon="mdi:file-delimited-outline", width=18),
+        id=self.ids.download_csv_btn,
+        variant="light",
+        color="blue",
+        radius="md",
+        size="lg",
+        disabled=True,
+    ),
+),
+
                     ],
                 ),
             ],
@@ -598,12 +648,13 @@ class MainWindow:
             Output(self.rs.ids.matrix_grid, "rowData"),
             Output(self.rs.ids.manu_badge, "children"),
             Output(self.rs.ids.download_btn, "disabled"),
+            Output(self.rs.ids.download_csv_btn, "disabled"),
             Input(self.rs.ids.manu_ms, "value"),
             State(self.rs.ids.store, "data"),
         )
         def filter_by_manu(manu_values, store_json):
             if not store_json:
-                return no_update, no_update, no_update
+                return no_update, no_update, no_update, no_update
 
             df = pd.read_json(StringIO(store_json), orient="records")
 
@@ -621,7 +672,8 @@ class MainWindow:
             else:
                 badge = f"Все/{total}"
 
-            return df.to_dict("records"), badge, False
+            return df.to_dict("records"), badge, False, False
+
         
         
         
@@ -673,7 +725,37 @@ class MainWindow:
 
             stamp = datetime.now().strftime("%Y%m%d_%H%M")
             filename = f"matrix_{start}_{end}_{stamp}.xlsx"
-            return dcc.send_bytes(xlsx_bytes, filename)
+            # return dcc.send_bytes(xlsx_bytes, filename)
+            return dcc.send_bytes(lambda buffer: buffer.write(xlsx_bytes), filename)
+        
+        
+        @app.callback(
+            Output(self.rs.ids.download_csv, "data"),
+            Input(self.rs.ids.download_csv_btn, "n_clicks"),
+            State(self.rs.ids.store, "data"),
+            State(self.rs.ids.manu_ms, "value"),
+            State(self.mslider_id, "value"),
+            prevent_initial_call=True,
+        )
+        def download_csv(n, store_json, manu_values, ms):
+            if not n or not store_json:
+                return no_update
+
+            df = pd.read_json(StringIO(store_json), orient="records")
+
+            if manu_values:
+                df = df[df["manu"].fillna("Нет производителя").astype(str).isin(manu_values)]
+
+            # если не хочешь служебные колонки
+            df = df.drop(columns=["date_json", "quant_json", "ls_quant", "ls_date", "is_quant", "is_date"], errors="ignore")
+
+            start, end = id_to_months(ms[0], ms[1])
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            filename = f"matrix_{start}_{end}_{stamp}.csv"
+
+            return dcc.send_data_frame(df.to_csv, filename, index=False, sep="|", encoding="utf-8-sig")
+
+
 
 
 
@@ -695,6 +777,12 @@ class MainWindow:
             start, end = id_to_months(ms[0], ms[1])
 
             df_bc = fetch_barcode_breakdown(ENGINE, item_id=item_id, start=start, end=end)
-            panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
+            panel = render_barcode_panel(
+                        df_bc,
+                        title_name=fullname,
+                        subtitle=f"item_id = {item_id}",
+                    )
+
+            # panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
 
             return True, panel

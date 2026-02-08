@@ -9,6 +9,9 @@ from dash import dcc, Input, Output, State, no_update
 from .forecast import SEASONS_OPTIONS, forecast
 from components import NoData
 
+from .empty_state import render_planning_empty_state
+
+
 import locale
 
 locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
@@ -30,17 +33,7 @@ class PlaningPage:
         self.changepoint_prior_scale_id = "changepoint_prior_scale_id"
         self.changepoint_range_id = "changepoint_range_id"
         self.n_changepoints_id = "n_changepoints_id"
-        
-        self.empty_hint = dmc.Alert(
-            title="Нужно выбрать параметры",
-            children="Выберите горизонт планирования (дату) — после этого появится прогноз.",
-            color="teal",
-            variant="light",
-            radius="md",
-            withCloseButton=False,
-            icon=DashIconify(icon="mdi:calendar-check", width=18),
-        )
-
+    
 
         self.dates_fieldsets = dmc.Fieldset(
             [
@@ -223,7 +216,8 @@ class PlaningPage:
                                 dcc.Loading(
                                     [
                                         dmc.Container(
-                                            children=[self.empty_hint],
+                                            children=render_planning_empty_state(),
+                                    
                                             id=self.resultes_container_id,
                                             fluid=True,
                                         )
@@ -339,4 +333,5 @@ class PlaningPage:
                     ]
                 )
             else:
-                return NoData().component
+                return render_planning_empty_state()
+                

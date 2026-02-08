@@ -38,6 +38,9 @@ class MatrixIds:
 
     filter_help_open: str = "filter_help_open_id_for_matrix"
     filter_help_modal: str = "filter_help_modal_id_for_matrix"
+    
+    zones_help_open: str = "zones_help_open_id_for_matrix"
+    zones_help_modal: str = "zones_help_modal_id_for_matrix"
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,10 @@ class MatrixRightIds:
     # download (RIGHT side)
     download_btn: str = "matrix_download_excel_btn"
     download: str = "matrix_download_excel"
+    
+    #  CSV download (FAST)
+    download_csv_btn: str = "matrix_download_csv_btn"
+    download_csv: str = "matrix_download_csv"
     
     # manufacturer filter (RIGHT header)
     manu_ms: str = "matrix_manu_ms"
