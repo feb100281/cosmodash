@@ -466,7 +466,7 @@ class RightSection:
 
                 dmc.Drawer(
                     id=self.ids.barcode_drawer,
-                    title="Детализация по штрихкодам",
+                    title=None,
                     opened=False,
                     position="right",
                     size=520,
@@ -777,6 +777,12 @@ class MainWindow:
             start, end = id_to_months(ms[0], ms[1])
 
             df_bc = fetch_barcode_breakdown(ENGINE, item_id=item_id, start=start, end=end)
-            panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
+            panel = render_barcode_panel(
+                        df_bc,
+                        title_name=fullname,
+                        subtitle=f"item_id = {item_id}",
+                    )
+
+            # panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
 
             return True, panel
