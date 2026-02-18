@@ -55,7 +55,7 @@ COLORS_BY_COLOR = colors_by_color()
 
 class MonthSlider(dmc.RangeSlider):
     def __init__(
-        self, id, min_date="2022-01-31", max_date=None, defaul_period=12, **kwargs
+        self, id, min_date="2021-01-31", max_date=None, defaul_period=12, **kwargs #ЗДЕСЬ МЕНЯТЬ СЛАЙДЕР
     ):
         dates = DATES
         if max_date is None:
