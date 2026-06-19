@@ -1,3 +1,4 @@
+# pages/segments/main_window.py
 import pandas as pd
 import numpy as np
 from dash_iconify import DashIconify
@@ -37,7 +38,7 @@ from data import (
 )
 from components import MonthSlider, DATES, COLORS_BY_SHADE, COLORS_BY_COLOR
 from dash import dcc, Input, Output, State, no_update, MATCH
-from .db_queries import get_items, fletch_dataset, fletch_agents, fletch_stores
+from .db_queries import get_items, fletch_dataset, fletch_agents, fletch_stores, get_items_with_barcodes
 from .drawler import CATS_MANAGEMENT
 from .ag_modal import AGModal
 AG_MODAL = AGModal()
@@ -2221,6 +2222,218 @@ class SegmentMainWindow:
         
         
 
+        # @app.callback(
+        #     Output("pareto-download-xlsx", "data"),
+        #     Input("pareto-export-xlsx", "n_clicks"),
+        #     State(self.tree_id, "checked"),
+        #     State(self.df_store_id, "data"),
+        #     prevent_initial_call=True,
+        # )
+        # def export_pareto_xlsx(n, checked, store_data):
+        #     if not n or not checked or not store_data:
+        #         return no_update
+
+        #     md = get_items(checked, store_data["start"], store_data["end"])
+        #     if md is None or len(md) == 0:
+        #         return no_update
+
+        #     # ---------- 1) Подготовка данных ----------
+        #     x = md.copy()
+
+        #     # дата (для "последней продажи")
+        #     date_col = None
+        #     if "last_sales_date" in x.columns:
+        #         date_col = "last_sales_date"
+        #     elif "date" in x.columns:
+        #         date_col = "date"
+        #     elif "eom" in x.columns:
+        #         date_col = "eom"
+
+        #     if date_col:
+        #         x[date_col] = pd.to_datetime(x[date_col], errors="coerce")
+
+        #     # amount (выручка нетто)
+        #     if "amount" not in x.columns:
+        #         x["dt"] = pd.to_numeric(x.get("dt"), errors="coerce").fillna(0.0)
+        #         x["cr"] = pd.to_numeric(x.get("cr"), errors="coerce").fillna(0.0)
+        #         x["amount"] = x["dt"] - x["cr"]
+        #     else:
+        #         x["amount"] = pd.to_numeric(x["amount"], errors="coerce").fillna(0.0)
+
+        #     # qty (кол-во нетто)
+        #     if "quant" not in x.columns:
+        #         x["quant_dt"] = pd.to_numeric(x.get("quant_dt"), errors="coerce").fillna(0.0)
+        #         x["quant_cr"] = pd.to_numeric(x.get("quant_cr"), errors="coerce").fillna(0.0)
+        #         x["quant"] = x["quant_dt"] - x["quant_cr"]
+        #     else:
+        #         x["quant"] = pd.to_numeric(x["quant"], errors="coerce").fillna(0.0)
+
+        #     # --------- КЛЮЧ ДЛЯ ГРУППИРОВКИ (ВАЖНО!) ----------
+        #     # чтобы не склеивать разные товары с одинаковым fullname
+        #     has_item_id = "item_id" in x.columns
+        #     key_cols = ["item_id", "fullname"] if has_item_id else ["fullname"]
+
+        #     # 1) базовая агрегация: выручка, кол-во, средняя цена, последняя дата продажи
+        #     agg = {
+        #         "amount": ("amount", "sum"),
+        #         "qty": ("quant", "sum"),
+        #     }
+        #     if date_col:
+        #         agg["last_sale"] = (date_col, "max")
+
+        #     g = (
+        #         x.groupby(key_cols, as_index=False)
+        #         .agg(**agg)
+        #         .sort_values("amount", ascending=False)
+        #         .reset_index(drop=True)
+        #     )
+
+        #     # средняя цена за период (нетто)
+        #     g["avg_price"] = g["amount"] / g["qty"].replace(0, np.nan)
+
+        #     # доли (0..1)
+        #     total = float(g["amount"].sum()) if not g.empty else 0.0
+        #     g["share"] = (g["amount"] / total) if total > 0 else 0.0
+        #     g["cum_share"] = g["share"].cumsum()
+
+        #     g.insert(0, "rank", np.arange(1, len(g) + 1))
+        #     top30 = g.head(30).copy()
+
+        #     # порядок колонок для Excel (БЕЗ "Последней цены продажи")
+        #     cols = ["rank"]
+        #     if has_item_id:
+        #         cols += ["item_id"]
+        #     cols += ["fullname", "amount", "qty", "avg_price"]
+        #     if date_col:
+        #         cols.append("last_sale")
+        #     cols += ["share", "cum_share"]
+
+        #     rename_map = {
+        #         "rank": "Ранг",
+        #         "fullname": "Номенклатура",
+        #         "amount": "Выручка, ₽",
+        #         "qty": "Кол-во, шт",
+        #         "avg_price": "Средняя цена, ₽",
+        #         "last_sale": "Последняя продажа",
+        #         "share": "Доля выручки, %",
+        #         "cum_share": "Накопленная доля, %",
+        #     }
+        #     if has_item_id:
+        #         rename_map["item_id"] = "ID товара"
+
+        #     out = top30[cols].rename(columns=rename_map)
+
+        #     # ---------- 2) Excel через openpyxl ----------
+        #     wb = Workbook()
+        #     ws = wb.active
+        #     ws.title = "Парето (Топ-30)"
+
+        #     # Запишем датафрейм
+        #     for r in dataframe_to_rows(out, index=False, header=True):
+        #         ws.append(r)
+
+        #     # Стили
+        #     header_fill = PatternFill("solid", fgColor="1F4E79")  # темно-синий
+        #     header_font = Font(color="FFFFFF", bold=True)
+        #     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        #     thin = Side(style="thin", color="D9D9D9")
+        #     border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        #     # Шапка
+        #     for cell in ws[1]:
+        #         cell.fill = header_fill
+        #         cell.font = header_font
+        #         cell.alignment = header_align
+        #         cell.border = border
+
+        #     # Фиксация шапки + фильтр
+        #     ws.freeze_panes = "A2"
+        #     ws.auto_filter.ref = ws.dimensions
+
+        #     # Карточный вид: границы + выравнивание
+        #     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        #         for cell in row:
+        #             cell.border = border
+        #             if cell.column == 1:  # Ранг
+        #                 cell.alignment = Alignment(horizontal="center", vertical="center")
+        #             else:
+        #                 if isinstance(cell.value, (int, float)) or hasattr(cell.value, "year"):
+        #                     cell.alignment = Alignment(horizontal="right", vertical="center")
+        #                 else:
+        #                     cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        #     # ---------- 3) Форматы чисел по заголовкам ----------
+        #     headers = [c.value for c in ws[1]]
+        #     col_idx = {name: i + 1 for i, name in enumerate(headers)}
+
+        #     def col_letter(name: str) -> str:
+        #         return get_column_letter(col_idx[name])
+
+        #     # Деньги
+        #     for name in ("Выручка, ₽", "Средняя цена, ₽"):
+        #         if name in col_idx:
+        #             L = col_letter(name)
+        #             for cell in ws[L][1:]:
+        #                 cell.number_format = '#,##0'
+
+        #     # Кол-во
+        #     if "Кол-во, шт" in col_idx:
+        #         L = col_letter("Кол-во, шт")
+        #         for cell in ws[L][1:]:
+        #             cell.number_format = '#,##0'
+
+        #     # Проценты (2 знака, т.к. share 0..1)
+        #     for name in ("Доля, %", "Накопленная доля, %"):
+        #         if name in col_idx:
+        #             L = col_letter(name)
+        #             for cell in ws[L][1:]:
+        #                 cell.number_format = '0.00%'
+
+        #     # Дата
+        #     if "Последняя продажа" in col_idx:
+        #         L = col_letter("Последняя продажа")
+        #         for cell in ws[L][1:]:
+        #             cell.number_format = 'dd.mm.yyyy'
+
+        #     # ---------- 4) Зебра ----------
+        #     zebra_fill = PatternFill("solid", fgColor="F6F8FA")
+        #     for r in range(2, ws.max_row + 1):
+        #         if r % 2 == 0:
+        #             for c in range(1, ws.max_column + 1):
+        #                 ws.cell(row=r, column=c).fill = zebra_fill
+
+        #     # ---------- 5) Градиент по выручке ----------
+        #     if "Выручка, ₽" in col_idx:
+        #         L = col_letter("Выручка, ₽")
+        #         ws.conditional_formatting.add(
+        #             f"{L}2:{L}{ws.max_row}",
+        #             ColorScaleRule(
+        #                 start_type="min", start_color="E8F5E9",
+        #                 mid_type="percentile", mid_value=50, mid_color="C8E6C9",
+        #                 end_type="max", end_color="81C784",
+        #             )
+        #         )
+
+        #     # ---------- 6) Автоширина колонок ----------
+        #     for col in range(1, ws.max_column + 1):
+        #         max_len = 0
+        #         letter = get_column_letter(col)
+        #         for cell in ws[letter]:
+        #             val = "" if cell.value is None else str(cell.value)
+        #             max_len = max(max_len, len(val))
+        #         ws.column_dimensions[letter].width = min(max_len + 2, 60)
+
+        #     ws.row_dimensions[1].height = 22
+
+        #     # ---------- 7) Отдаём файл ----------
+        #     bio = BytesIO()
+        #     wb.save(bio)
+        #     bio.seek(0)
+
+        #     filename = f"Парето_топ30_{store_data['start']}_{store_data['end']}.xlsx"
+        #     return dcc.send_bytes(bio.getvalue(), filename)
+        
+        
         @app.callback(
             Output("pareto-download-xlsx", "data"),
             Input("pareto-export-xlsx", "n_clicks"),
@@ -2232,12 +2445,17 @@ class SegmentMainWindow:
             if not n or not checked or not store_data:
                 return no_update
 
+            # Для обычных данных (без разбивки по штрих-кодам) - для топ-30 и производителей
             md = get_items(checked, store_data["start"], store_data["end"])
             if md is None or len(md) == 0:
                 return no_update
 
+            # Для данных с разбивкой по штрих-кодам - для 2-го листа
+            md_barcode = get_items_with_barcodes(checked, store_data["start"], store_data["end"])
+            
             # ---------- 1) Подготовка данных ----------
             x = md.copy()
+            x_barcode = md_barcode.copy() if not md_barcode.empty else pd.DataFrame()
 
             # дата (для "последней продажи")
             date_col = None
@@ -2250,6 +2468,8 @@ class SegmentMainWindow:
 
             if date_col:
                 x[date_col] = pd.to_datetime(x[date_col], errors="coerce")
+                if not x_barcode.empty:
+                    x_barcode[date_col] = pd.to_datetime(x_barcode[date_col], errors="coerce")
 
             # amount (выручка нетто)
             if "amount" not in x.columns:
@@ -2259,6 +2479,12 @@ class SegmentMainWindow:
             else:
                 x["amount"] = pd.to_numeric(x["amount"], errors="coerce").fillna(0.0)
 
+            if not x_barcode.empty:
+                x_barcode["dt"] = pd.to_numeric(x_barcode.get("dt"), errors="coerce").fillna(0.0)
+                x_barcode["cr"] = pd.to_numeric(x_barcode.get("cr"), errors="coerce").fillna(0.0)
+                x_barcode["amount"] = x_barcode["dt"] - x_barcode["cr"]
+                x_barcode["quant"] = x_barcode["quant_dt"] - x_barcode["quant_cr"]
+
             # qty (кол-во нетто)
             if "quant" not in x.columns:
                 x["quant_dt"] = pd.to_numeric(x.get("quant_dt"), errors="coerce").fillna(0.0)
@@ -2267,18 +2493,33 @@ class SegmentMainWindow:
             else:
                 x["quant"] = pd.to_numeric(x["quant"], errors="coerce").fillna(0.0)
 
-            # --------- КЛЮЧ ДЛЯ ГРУППИРОВКИ (ВАЖНО!) ----------
-            # чтобы не склеивать разные товары с одинаковым fullname
+            # --------- КЛЮЧИ ----------
             has_item_id = "item_id" in x.columns
             key_cols = ["item_id", "fullname"] if has_item_id else ["fullname"]
 
-            # 1) базовая агрегация: выручка, кол-во, средняя цена, последняя дата продажи
+            barcode_col = None
+            for col in ["barcode", "штрихкод", "barcode_ean", "ean", "code"]:
+                if col in x.columns:
+                    barcode_col = col
+                    break
+
+            has_brend = "brend" in x.columns
+            has_manu = "manu" in x.columns
+
+            # 1) базовая агрегация
             agg = {
                 "amount": ("amount", "sum"),
                 "qty": ("quant", "sum"),
             }
             if date_col:
                 agg["last_sale"] = (date_col, "max")
+            
+            if barcode_col:
+                agg["barcode"] = (barcode_col, "first")
+            if has_brend:
+                agg["brend"] = ("brend", "first")
+            if has_manu:
+                agg["manu"] = ("manu", "first")
 
             g = (
                 x.groupby(key_cols, as_index=False)
@@ -2287,7 +2528,7 @@ class SegmentMainWindow:
                 .reset_index(drop=True)
             )
 
-            # средняя цена за период (нетто)
+            # средняя цена за период
             g["avg_price"] = g["amount"] / g["qty"].replace(0, np.nan)
 
             # доли (0..1)
@@ -2298,41 +2539,252 @@ class SegmentMainWindow:
             g.insert(0, "rank", np.arange(1, len(g) + 1))
             top30 = g.head(30).copy()
 
-            # порядок колонок для Excel (БЕЗ "Последней цены продажи")
-            cols = ["rank"]
-            if has_item_id:
-                cols += ["item_id"]
-            cols += ["fullname", "amount", "qty", "avg_price"]
-            if date_col:
-                cols.append("last_sale")
-            cols += ["share", "cum_share"]
+            # ---------- АГРЕГАЦИЯ ПО ПРОИЗВОДИТЕЛЯМ ----------
+            if has_manu and "manu" in g.columns:
+                manu_agg = (
+                    g.groupby("manu", as_index=False)
+                    .agg({
+                        "amount": "sum",
+                        "qty": "sum",
+                        "item_id": "count",
+                    })
+                    .rename(columns={"item_id": "sku_count"})
+                    .sort_values("amount", ascending=False)
+                    .reset_index(drop=True)
+                )
+                manu_agg["avg_price"] = manu_agg["amount"] / manu_agg["qty"].replace(0, np.nan)
+                total_manu = float(manu_agg["amount"].sum()) if not manu_agg.empty else 0.0
+                manu_agg["share"] = (manu_agg["amount"] / total_manu) if total_manu > 0 else 0.0
+                manu_agg["cum_share"] = manu_agg["share"].cumsum()
+                manu_agg.insert(0, "rank", np.arange(1, len(manu_agg) + 1))
+                manu_agg["avg_revenue_per_sku"] = manu_agg["amount"] / manu_agg["sku_count"].replace(0, np.nan)
 
-            rename_map = {
-                "rank": "Ранг",
+            # ---------- Excel ----------
+            wb = Workbook()
+            
+            # --- ЛИСТ 1: Парето (Топ-30) ---
+            ws1 = wb.active
+            ws1.title = "Парето (Топ-30)"
+
+            cols_top = []
+            if has_item_id:
+                cols_top.append("item_id")
+            cols_top.append("fullname")
+            if has_brend:
+                cols_top.append("brend")
+            if has_manu:
+                cols_top.append("manu")
+            cols_top += ["amount", "qty", "avg_price"]
+            if date_col:
+                cols_top.append("last_sale")
+            if barcode_col:
+                cols_top.append("barcode")
+            cols_top += ["share", "cum_share"]
+
+            rename_top = {
                 "fullname": "Номенклатура",
+                "brend": "Бренд",
+                "manu": "Производитель",
                 "amount": "Выручка, ₽",
                 "qty": "Кол-во, шт",
                 "avg_price": "Средняя цена, ₽",
                 "last_sale": "Последняя продажа",
                 "share": "Доля выручки, %",
                 "cum_share": "Накопленная доля, %",
+                "barcode": "Штрих-код",
             }
             if has_item_id:
-                rename_map["item_id"] = "ID товара"
+                rename_top["item_id"] = "ID товара"
 
-            out = top30[cols].rename(columns=rename_map)
+            out_top = top30[cols_top].rename(columns=rename_top)
+            out_top.insert(0, "Ранг", range(1, len(out_top) + 1))
 
-            # ---------- 2) Excel через openpyxl ----------
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "Парето (Топ-30)"
+            for r in dataframe_to_rows(out_top, index=False, header=True):
+                ws1.append(r)
+            _apply_style_to_worksheet(ws1)
 
-            # Запишем датафрейм
-            for r in dataframe_to_rows(out, index=False, header=True):
-                ws.append(r)
+            # --- ЛИСТ 2: Все SKU по ШТРИХ-КОДАМ ---
+            ws2 = wb.create_sheet("Все SKU по штрих-кодам")
 
-            # Стили
-            header_fill = PatternFill("solid", fgColor="1F4E79")  # темно-синий
+            if not x_barcode.empty:
+                bc_col = "barcode" if "barcode" in x_barcode.columns else None
+                
+                if bc_col:
+                    by_barcode = x_barcode.copy()
+                    
+                    if "amount" not in by_barcode.columns:
+                        by_barcode["amount"] = by_barcode["dt"] - by_barcode["cr"]
+                    if "quant" not in by_barcode.columns:
+                        by_barcode["quant"] = by_barcode["quant_dt"] - by_barcode["quant_cr"]
+                    
+                    by_barcode = by_barcode.sort_values("amount", ascending=False).reset_index(drop=True)
+                    
+                    total_barcode = float(by_barcode["amount"].sum()) if not by_barcode.empty else 0.0
+                    by_barcode["share"] = (by_barcode["amount"] / total_barcode) if total_barcode > 0 else 0.0
+                    by_barcode["cum_share"] = by_barcode["share"].cumsum()
+                    by_barcode["avg_price"] = by_barcode["amount"] / by_barcode["quant"].replace(0, np.nan)
+                    by_barcode.insert(0, "rank", np.arange(1, len(by_barcode) + 1))
+                    
+                    cols_barcode = ["rank"]
+                    if has_item_id:
+                        cols_barcode.append("item_id")
+                    cols_barcode.append("fullname")
+                    if has_brend:
+                        cols_barcode.append("brend")
+                    if has_manu:
+                        cols_barcode.append("manu")
+                    cols_barcode.append(bc_col)
+                    cols_barcode += ["amount", "quant", "avg_price"]
+                    if date_col and date_col in by_barcode.columns:
+                        cols_barcode.append(date_col)
+                    cols_barcode += ["share", "cum_share"]
+                    
+                    rename_barcode = {
+                        "rank": "Ранг",
+                        "fullname": "Номенклатура",
+                        "brend": "Бренд",
+                        "manu": "Производитель",
+                        bc_col: "Штрих-код",
+                        "amount": "Выручка, ₽",
+                        "quant": "Кол-во, шт",
+                        "avg_price": "Средняя цена, ₽",
+                        "share": "Доля выручки, %",
+                        "cum_share": "Накопленная доля, %",
+                    }
+                    if date_col:
+                        rename_barcode[date_col] = "Последняя продажа"
+                    if has_item_id:
+                        rename_barcode["item_id"] = "ID товара"
+                    
+                    out_barcode = by_barcode[cols_barcode].rename(columns=rename_barcode)
+                    
+                    for r in dataframe_to_rows(out_barcode, index=False, header=True):
+                        ws2.append(r)
+                    
+                    _apply_style_to_worksheet(ws2)
+                    
+                    for i, col_name in enumerate(out_barcode.columns, 1):
+                        if col_name == "Штрих-код":
+                            ws2.column_dimensions[get_column_letter(i)].width = 25
+                            for row in range(2, ws2.max_row + 1):
+                                cell = ws2.cell(row=row, column=i)
+                                cell.font = Font(name="Courier New", size=11)
+                            break
+                else:
+                    # fallback
+                    ws2.title = "Все SKU"
+                    full_list = g.copy()
+                    if "rank" in full_list.columns:
+                        full_list = full_list.drop(columns=["rank"])
+                    cols_full = []
+                    if has_item_id:
+                        cols_full.append("item_id")
+                    cols_full.append("fullname")
+                    if has_brend:
+                        cols_full.append("brend")
+                    if has_manu:
+                        cols_full.append("manu")
+                    cols_full += ["amount", "qty", "avg_price"]
+                    if date_col:
+                        cols_full.append("last_sale")
+                    cols_full += ["share", "cum_share"]
+                    rename_full = {
+                        "fullname": "Номенклатура",
+                        "brend": "Бренд",
+                        "manu": "Производитель",
+                        "amount": "Выручка, ₽",
+                        "qty": "Кол-во, шт",
+                        "avg_price": "Средняя цена, ₽",
+                        "last_sale": "Последняя продажа",
+                        "share": "Доля выручки, %",
+                        "cum_share": "Накопленная доля, %",
+                    }
+                    if has_item_id:
+                        rename_full["item_id"] = "ID товара"
+                    out_full = full_list[cols_full].rename(columns=rename_full)
+                    out_full = out_full.sort_values("Выручка, ₽", ascending=False)
+                    for r in dataframe_to_rows(out_full, index=False, header=True):
+                        ws2.append(r)
+                    _apply_style_to_worksheet(ws2)
+            else:
+                ws2.title = "Все SKU"
+                full_list = g.copy()
+                if "rank" in full_list.columns:
+                    full_list = full_list.drop(columns=["rank"])
+                cols_full = []
+                if has_item_id:
+                    cols_full.append("item_id")
+                cols_full.append("fullname")
+                if has_brend:
+                    cols_full.append("brend")
+                if has_manu:
+                    cols_full.append("manu")
+                cols_full += ["amount", "qty", "avg_price"]
+                if date_col:
+                    cols_full.append("last_sale")
+                cols_full += ["share", "cum_share"]
+                rename_full = {
+                    "fullname": "Номенклатура",
+                    "brend": "Бренд",
+                    "manu": "Производитель",
+                    "amount": "Выручка, ₽",
+                    "qty": "Кол-во, шт",
+                    "avg_price": "Средняя цена, ₽",
+                    "last_sale": "Последняя продажа",
+                    "share": "Доля выручки, %",
+                    "cum_share": "Накопленная доля, %",
+                }
+                if has_item_id:
+                    rename_full["item_id"] = "ID товара"
+                out_full = full_list[cols_full].rename(columns=rename_full)
+                out_full = out_full.sort_values("Выручка, ₽", ascending=False)
+                for r in dataframe_to_rows(out_full, index=False, header=True):
+                    ws2.append(r)
+                _apply_style_to_worksheet(ws2)
+
+            # --- ЛИСТ 3: Агрегация по производителям ---
+            if has_manu and not manu_agg.empty:
+                ws3 = wb.create_sheet("По производителям")
+                
+                rename_manu = {
+                    "rank": "Ранг",
+                    "manu": "Производитель",
+                    "amount": "Выручка, ₽",
+                    "qty": "Кол-во, шт",
+                    "sku_count": "Кол-во SKU",
+                    "avg_price": "Средняя цена, ₽",
+                    "avg_revenue_per_sku": "Ср. выручка на SKU, ₽",
+                    "share": "Доля выручки, %",
+                    "cum_share": "Накопленная доля, %",
+                }
+                
+                out_manu = manu_agg.rename(columns=rename_manu)
+                
+                for r in dataframe_to_rows(out_manu, index=False, header=True):
+                    ws3.append(r)
+                
+                _apply_style_to_worksheet(ws3)
+                
+                for i, col_name in enumerate(out_manu.columns, 1):
+                    if col_name in ["Производитель", "Бренд"]:
+                        ws3.column_dimensions[get_column_letter(i)].width = 30
+
+            # ---------- Отдаём файл ----------
+            bio = BytesIO()
+            wb.save(bio)
+            bio.seek(0)
+
+            filename = f"Парето_{store_data['start']}_{store_data['end']}.xlsx"
+            return dcc.send_bytes(bio.getvalue(), filename)
+
+
+        def _apply_style_to_worksheet(ws):
+            """Применяет общие стили к листу"""
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from openpyxl.formatting.rule import ColorScaleRule
+            from openpyxl.utils import get_column_letter
+            
+            header_fill = PatternFill("solid", fgColor="1F4E79")
             header_font = Font(color="FFFFFF", bold=True)
             header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
             thin = Side(style="thin", color="D9D9D9")
@@ -2345,15 +2797,20 @@ class SegmentMainWindow:
                 cell.alignment = header_align
                 cell.border = border
 
-            # Фиксация шапки + фильтр
-            ws.freeze_panes = "A2"
-            ws.auto_filter.ref = ws.dimensions
+            # Отключаем линии сетки
+            ws.sheet_view.showGridLines = False
+            
+            # Заморозка: строка 1 + первые 3 колонки (A, B, C)
+            ws.freeze_panes = "D2"
+            
+            if ws.max_row > 1:
+                ws.auto_filter.ref = ws.dimensions
 
-            # Карточный вид: границы + выравнивание
+            # Карточный вид
             for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
                 for cell in row:
                     cell.border = border
-                    if cell.column == 1:  # Ранг
+                    if cell.column == 1:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
                     else:
                         if isinstance(cell.value, (int, float)) or hasattr(cell.value, "year"):
@@ -2361,47 +2818,42 @@ class SegmentMainWindow:
                         else:
                             cell.alignment = Alignment(horizontal="left", vertical="center")
 
-            # ---------- 3) Форматы чисел по заголовкам ----------
-            headers = [c.value for c in ws[1]]
-            col_idx = {name: i + 1 for i, name in enumerate(headers)}
+            # Форматы чисел
+            col_idx = {cell.value: i + 1 for i, cell in enumerate(ws[1])}
 
-            def col_letter(name: str) -> str:
-                return get_column_letter(col_idx[name])
+            def col_letter(name):
+                return get_column_letter(col_idx.get(name, 1))
 
-            # Деньги
-            for name in ("Выручка, ₽", "Средняя цена, ₽"):
+            for name in ("Выручка, ₽", "Средняя цена, ₽", "Ср. выручка на SKU, ₽"):
                 if name in col_idx:
-                    L = col_letter(name)
-                    for cell in ws[L][1:]:
+                    for cell in ws[col_letter(name)][1:]:
                         cell.number_format = '#,##0'
 
-            # Кол-во
             if "Кол-во, шт" in col_idx:
-                L = col_letter("Кол-во, шт")
-                for cell in ws[L][1:]:
+                for cell in ws[col_letter("Кол-во, шт")][1:]:
                     cell.number_format = '#,##0'
 
-            # Проценты (2 знака, т.к. share 0..1)
-            for name in ("Доля, %", "Накопленная доля, %"):
+            if "Кол-во SKU" in col_idx:
+                for cell in ws[col_letter("Кол-во SKU")][1:]:
+                    cell.number_format = '#,##0'
+
+            for name in ("Доля выручки, %", "Накопленная доля, %"):
                 if name in col_idx:
-                    L = col_letter(name)
-                    for cell in ws[L][1:]:
+                    for cell in ws[col_letter(name)][1:]:
                         cell.number_format = '0.00%'
 
-            # Дата
             if "Последняя продажа" in col_idx:
-                L = col_letter("Последняя продажа")
-                for cell in ws[L][1:]:
+                for cell in ws[col_letter("Последняя продажа")][1:]:
                     cell.number_format = 'dd.mm.yyyy'
 
-            # ---------- 4) Зебра ----------
+            # Зебра
             zebra_fill = PatternFill("solid", fgColor="F6F8FA")
             for r in range(2, ws.max_row + 1):
                 if r % 2 == 0:
                     for c in range(1, ws.max_column + 1):
                         ws.cell(row=r, column=c).fill = zebra_fill
 
-            # ---------- 5) Градиент по выручке ----------
+            # Градиент по выручке
             if "Выручка, ₽" in col_idx:
                 L = col_letter("Выручка, ₽")
                 ws.conditional_formatting.add(
@@ -2413,25 +2865,16 @@ class SegmentMainWindow:
                     )
                 )
 
-            # ---------- 6) Автоширина колонок ----------
+            # Автоширина
             for col in range(1, ws.max_column + 1):
                 max_len = 0
                 letter = get_column_letter(col)
                 for cell in ws[letter]:
                     val = "" if cell.value is None else str(cell.value)
                     max_len = max(max_len, len(val))
-                ws.column_dimensions[letter].width = min(max_len + 2, 60)
+                ws.column_dimensions[letter].width = min(max_len + 2, 50)
 
             ws.row_dimensions[1].height = 22
-
-            # ---------- 7) Отдаём файл ----------
-            bio = BytesIO()
-            wb.save(bio)
-            bio.seek(0)
-
-            filename = f"Парето_топ30_{store_data['start']}_{store_data['end']}.xlsx"
-            return dcc.send_bytes(bio.getvalue(), filename)
-
         
         
         CATS_MANAGEMENT.register_callbacks(app)

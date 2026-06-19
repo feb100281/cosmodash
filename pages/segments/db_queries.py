@@ -1,3 +1,4 @@
+# pages/segments/db_queries.py
 import pandas as pd
 from data import ENGINE, get_connection
 
@@ -19,7 +20,8 @@ def get_items(ids_int, start, end):
         i.init_date,
         GROUP_CONCAT(DISTINCT m.name ORDER BY m.name SEPARATOR ',') AS manu,
         GROUP_CONCAT(DISTINCT b.name ORDER BY b.name SEPARATOR ',') AS brend,
-        GROUP_CONCAT(DISTINCT a.name ORDER BY a.name SEPARATOR ',') AS agent
+        GROUP_CONCAT(DISTINCT a.name ORDER BY a.name SEPARATOR ',') AS agent,
+        GROUP_CONCAT(DISTINCT bc.barcode ORDER BY bc.barcode SEPARATOR ',') AS barcode
 
         
         from sales_salesdata as s 
@@ -27,6 +29,7 @@ def get_items(ids_int, start, end):
         left join corporate_itemmanufacturer as m on m.id = i.manufacturer_id
         left join corporate_itembrend as b on b.id = i.brend_id
         left join corporate_agents as a on a.id = s.agent_id
+        left join corporate_barcode as bc on bc.id = s.barcode_id
 
 
         where item_id in  ({placeholders}) and date between '{start}' and '{end}'
@@ -57,7 +60,8 @@ def fletch_dataset(start, end):
             parent.id AS parent_cat_id,
             parent.name AS parent_cat,
             subcat.id AS subcat_id,
-            subcat.name AS subcat
+            subcat.name AS subcat,
+             bc.barcode AS barcode
       
         FROM
             sales_salesdata AS s
@@ -73,6 +77,8 @@ def fletch_dataset(start, end):
             corporate_cattree AS parent ON parent.id = cat.parent_id
                 LEFT JOIN
             corporate_subcategory AS subcat ON subcat.id = i.subcat_id
+                LEFT JOIN
+            corporate_barcode AS bc ON bc.id = s.barcode_id
         WHERE
             date BETWEEN '{start}' AND '{end}'
     """
@@ -195,3 +201,41 @@ def fletch_item_details(item_id, start, end):
     """
     
     return pd.read_sql(q, ENGINE)
+
+
+
+
+
+def get_items_with_barcodes(ids_int, start, end):
+    """
+    Возвращает данные с разбивкой по штрих-кодам.
+    Одна строка = один штрих-код у одного товара.
+    """
+    if not ids_int:
+        return pd.DataFrame()
+
+    placeholders = ','.join(ids_int)
+    query = f"""
+        select 
+        s.item_id,
+        COALESCE(bc.barcode, 'нет штрихкода') as barcode,
+        CONCAT(i.fullname, ' (арт. ', COALESCE(i.article, ''), ')') as fullname,  -- ← ИСПРАВЛЕНО!
+        COALESCE(i.article, '') as article,
+        SUM(s.dt) as dt,
+        SUM(s.cr) as cr,
+        SUM(s.quant_dt) as quant_dt,
+        SUM(s.quant_cr) as quant_cr,
+        MAX(s.date) as last_sales_date,
+        GROUP_CONCAT(DISTINCT m.name ORDER BY m.name SEPARATOR ',') AS manu,
+        GROUP_CONCAT(DISTINCT br.name ORDER BY br.name SEPARATOR ',') AS brend
+        from sales_salesdata as s 
+        left join corporate_items as i on i.id = s.item_id
+        left join corporate_barcode as bc on bc.id = s.barcode_id
+        left join corporate_itemmanufacturer as m on m.id = i.manufacturer_id
+        left join corporate_itembrend as br on br.id = i.brend_id
+        where s.item_id in ({placeholders}) 
+          and s.date between '{start}' and '{end}'
+        group by s.item_id, s.barcode_id, i.fullname, i.article
+        order by s.item_id, bc.barcode
+    """
+    return pd.read_sql(query, ENGINE)
