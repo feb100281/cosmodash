@@ -1,4 +1,4 @@
-# matrix/ids.py
+# pages/matrix/ids.py
 from dataclasses import dataclass
 
 
@@ -14,7 +14,7 @@ class MatrixIds:
     y_score: str = "y_score_id"
     z_score: str = "z_score_id"
 
-    # ROP/SS
+    # ROP / SS
     lead_time: str = "lead_time_id_for_matix"
     service_ratio: str = "servis_ratio_id_for_matrix"
 
@@ -25,6 +25,10 @@ class MatrixIds:
 
     # Buttons
     launch: str = "launch_batton_id_for_matrix"
+
+    # Settings drawer
+    settings_open: str = "matrix_settings_open"
+    settings_drawer: str = "matrix_settings_drawer"
 
     # Help modals + open buttons
     abc_help_open: str = "abc_help_open_id_for_matrix"
@@ -38,7 +42,7 @@ class MatrixIds:
 
     filter_help_open: str = "filter_help_open_id_for_matrix"
     filter_help_modal: str = "filter_help_modal_id_for_matrix"
-    
+
     zones_help_open: str = "zones_help_open_id_for_matrix"
     zones_help_modal: str = "zones_help_modal_id_for_matrix"
 
@@ -52,23 +56,25 @@ class MatrixRightIds:
     barcode_drawer_body: str = "barcode_drawer_body_id"
     loading: str = "matrix_loading"
 
-    # download (RIGHT side)
+    # Header
+    header: str = "matrix_header_container"
+    summary: str = "matrix_summary_container"
+
+    # Download
     download_btn: str = "matrix_download_excel_btn"
     download: str = "matrix_download_excel"
-    
-    #  CSV download (FAST)
+
     download_csv_btn: str = "matrix_download_csv_btn"
     download_csv: str = "matrix_download_csv"
-    
-    # manufacturer filter (RIGHT header)
+
+    # Filters in the right header
     manu_ms: str = "matrix_manu_ms"
     manu_badge: str = "matrix_manu_badge"
-    store: str = "matrix_store"
+    stock_status_ms: str = "matrix_stock_status_ms"
 
+    # Store
+    store: str = "matrix_store"
 
     @property
     def content(self) -> str:
         return f"{self.right_container}-content"
-
-    
-

@@ -222,7 +222,29 @@ def _apply_number_formats(ws, header_row: int = 4):
             fmt = '#,##0" ₽"'
             align = align_center
         # qty
-        elif n in ("кол-во", "количество", "quant", "qty", "шт", "кол-во (по датам)", "ср. μ (ед)", "ст откл. σ", "cv квар."):
+        elif (
+            n in (
+                "кол-во",
+                "количество",
+                "quant",
+                "qty",
+                "шт",
+                "кол-во (по датам)",
+                "ср. μ (ед)",
+                "ст откл. σ",
+                "cv квар.",
+                "остаток доступно",
+                "заказано",
+                "остаток итого",
+                "покрытие остатком, мес.",
+                "покрытие с заказами, мес.",
+                "отклонение доступного от rop",
+                "отклонение итого от rop",
+                "нужно заказать",
+            )
+            or n.startswith("остаток | ")
+            or n.startswith("заказано | ")
+        ):
             fmt = "#,##0.00"
             align = align_center
         # %
@@ -319,6 +341,10 @@ def _set_fixed_widths(
 
         # запасы
         "страх. запас (ед) (ss)", "rop (ед)",
+        "остаток доступно", "заказано", "остаток итого",
+        "покрытие остатком, мес.", "покрытие с заказами, мес.",
+        "отклонение доступного от rop", "отклонение итого от rop",
+        "нужно заказать",
     }
 
     for c in range(1, ws.max_column + 1):
@@ -327,7 +353,16 @@ def _set_fixed_widths(
             continue
         h = str(header).strip().lower()
         letter = get_column_letter(c)
-        ws.column_dimensions[letter].width = numeric_width if h in numeric_headers else text_width
+
+        is_numeric = (
+            h in numeric_headers
+            or h.startswith("остаток | ")
+            or h.startswith("заказано | ")
+        )
+
+        ws.column_dimensions[letter].width = (
+            numeric_width if is_numeric else text_width
+        )
 
 
 def _hide_columns_by_headers(ws, header_names: List[str], header_row: int = 4):
@@ -490,7 +525,13 @@ def _build_manufacturers_sheets(writer: pd.ExcelWriter, df_matrix_export: pd.Dat
     df = df_matrix_export.copy()
     df["Производитель"] = df["Производитель"].fillna("Нет производителя").astype(str).str.strip()
 
-    tmp = df.copy()
+    # Для summary считаем только родительские строки товара.
+    # Дочерние строки детализации по датам не должны увеличивать SKU.
+    if "Дата продажи" in df.columns:
+        tmp = df[df["Дата продажи"].isna()].copy()
+    else:
+        tmp = df.copy()
+
     tmp["SKU"] = 1
 
     sv = tmp.groupby("Производитель", as_index=False).agg(
@@ -784,36 +825,73 @@ def _add_footnote(ws, header_row: int = 4):
 # =========================
 # Main export
 # =========================
-def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: str) -> bytes:
+def build_matrix_excel_bytes(
+    engine,
+    df_matrix: pd.DataFrame,
+    start: str,
+    end: str,
+) -> bytes:
     """
     XLSX:
-      - Оглавление (вложенное, без объединений)
-      - Матрица (детализация по датам с outline, штрихкод в детальных строках, сортировка по дате)
-      - Штрихкоды (outline)
-      - Производители + листы производителей (оформлены)
-    Лист "Динамика (json)" НЕ создаётся.
+      - Оглавление
+      - Матрица
+      - Остатки
+      - Штрихкоды
+      - Производители
+      - отдельные листы производителей
+
+    В "Матрице" складские остатки находятся только в родительской строке SKU.
+    Дочерние строки по датам продаж не дублируют текущий остаток.
     """
     df_raw = df_matrix.copy()
-    
-    SERVICE_COLS = {
-    "item_id", "subcat_id", "cat_id",
-    "date_json", "quant_json",
-    "ls_quant", "ls_date", "is_quant", "is_date",
-}
 
+    SERVICE_COLS = {
+        "item_id",
+        "subcat_id",
+        "cat_id",
+        "date_json",
+        "quant_json",
+        "ls_quant",
+        "ls_date",
+        "is_quant",
+        "is_date",
+    }
 
     if "item_id" not in df_raw.columns:
-        raise ValueError("В df_matrix нет колонки 'item_id' — экспорт невозможен.")
+        raise ValueError(
+            "В df_matrix нет колонки 'item_id' — экспорт невозможен."
+        )
 
-    # штрихкоды
-    item_ids = df_raw["item_id"].dropna().astype(int).unique().tolist()
-    df_barcodes = _fetch_barcodes_for_items(engine, item_ids=item_ids, start=start, end=end)
+    # ----------------------------------------------------------------------
+    # Детализация по штрихкодам продаж
+    # ----------------------------------------------------------------------
+    item_ids = (
+        pd.to_numeric(df_raw["item_id"], errors="coerce")
+        .dropna()
+        .astype(int)
+        .unique()
+        .tolist()
+    )
+
+    df_barcodes = _fetch_barcodes_for_items(
+        engine,
+        item_ids=item_ids,
+        start=start,
+        end=end,
+    )
 
     if not df_barcodes.empty and "fullname" in df_raw.columns:
-        map_name = df_raw[["item_id", "fullname"]].drop_duplicates().set_index("item_id")["fullname"].to_dict()
+        map_name = (
+            df_raw[["item_id", "fullname"]]
+            .drop_duplicates()
+            .set_index("item_id")["fullname"]
+            .to_dict()
+        )
         df_barcodes["fullname"] = df_barcodes["item_id"].map(map_name)
 
-    # rename columns
+    # ----------------------------------------------------------------------
+    # Читаемые названия колонок
+    # ----------------------------------------------------------------------
     matrix_rename = {
         "fullname": "Номенклатура",
         "article": "Артикул",
@@ -840,6 +918,22 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         "month_count": "Периоды с продажами (мес)",
         "ss": "Страх. запас (ед) (SS)",
         "rop": "ROP (ед)",
+
+        # текущие остатки
+        "stock_date": "Дата остатков",
+        "stock_available": "Остаток доступно",
+        "stock_ordered": "Заказано",
+        "stock_total": "Остаток итого",
+        "stock_cover_months": "Покрытие остатком, мес.",
+        "stock_cover_months_total": "Покрытие с заказами, мес.",
+        "stock_vs_rop": "Отклонение доступного от ROP",
+        "stock_total_vs_rop": "Отклонение итого от ROP",
+        "order_need": "Нужно заказать",
+        "stock_status": "Статус остатка",
+        "barcode_stocks": "Остатки по штрихкодам",
+        "barcode_ordered": "Заказы по штрихкодам",
+
+        # service
         "item_id": "item_id",
         "subcat_id": "subcat_id",
         "cat_id": "cat_id",
@@ -849,15 +943,195 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         "ls_date": "ls_date",
         "is_quant": "is_quant",
         "is_date": "is_date",
-
     }
 
-    df_matrix_export = df_raw.rename(columns={k: v for k, v in matrix_rename.items() if k in df_raw.columns})
-    
-    # убрать служебные колонки из выгрузки
-    df_matrix_export = df_matrix_export.drop(columns=["cum_share", "_amount", "_share"], errors="ignore")
+    df_matrix_export = df_raw.rename(
+        columns={
+            key: value
+            for key, value in matrix_rename.items()
+            if key in df_raw.columns
+        }
+    )
 
+    # Динамические склады
+    dynamic_rename = {}
 
+    for column in df_matrix_export.columns:
+        column_str = str(column)
+
+        if column_str.startswith("stock_wh::"):
+            warehouse = column_str.split("::", 1)[1]
+            dynamic_rename[column] = f"Остаток | {warehouse}"
+
+        elif column_str.startswith("ordered_wh::"):
+            warehouse = column_str.split("::", 1)[1]
+            dynamic_rename[column] = f"Заказано | {warehouse}"
+
+    df_matrix_export = df_matrix_export.rename(
+        columns=dynamic_rename
+    )
+
+    df_matrix_export = df_matrix_export.drop(
+        columns=["cum_share", "_amount", "_share"],
+        errors="ignore",
+    )
+
+    # ----------------------------------------------------------------------
+    # Отдельный лист "Остатки" — одна строка = один SKU
+    # ----------------------------------------------------------------------
+    stock_base_cols = [
+        "ABC",
+        "XYZ",
+        "Номенклатура",
+        "Артикул",
+        "Производитель",
+        "Категория",
+        "Подкатегория",
+        "Дата остатков",
+        "Остаток доступно",
+        "Заказано",
+        "Остаток итого",
+        "ROP (ед)",
+        "Страх. запас (ед) (SS)",
+        "Ср. μ (ед)",
+        "Покрытие остатком, мес.",
+        "Покрытие с заказами, мес.",
+        "Отклонение доступного от ROP",
+        "Отклонение итого от ROP",
+        "Нужно заказать",
+        "Статус остатка",
+    ]
+
+    stock_warehouse_cols = sorted(
+        [
+            c
+            for c in df_matrix_export.columns
+            if str(c).startswith("Остаток | ")
+        ],
+        key=lambda x: str(x).lower(),
+    )
+
+    ordered_warehouse_cols = sorted(
+        [
+            c
+            for c in df_matrix_export.columns
+            if str(c).startswith("Заказано | ")
+        ],
+        key=lambda x: str(x).lower(),
+    )
+
+    stock_tail_cols = [
+        "Остатки по штрихкодам",
+        "Заказы по штрихкодам",
+        "item_id",
+    ]
+
+    stock_cols = (
+        [c for c in stock_base_cols if c in df_matrix_export.columns]
+        + stock_warehouse_cols
+        + ordered_warehouse_cols
+        + [c for c in stock_tail_cols if c in df_matrix_export.columns]
+    )
+
+    df_stocks_xlsx = (
+        df_matrix_export[stock_cols].copy()
+        if stock_cols
+        else pd.DataFrame()
+    )
+
+    # ----------------------------------------------------------------------
+    # Матрица — основной порядок
+    # ----------------------------------------------------------------------
+    prefer_cols = [
+        "ABC",
+        "XYZ",
+        "Номенклатура",
+        "Артикул",
+        "Производитель",
+        "Категория",
+        "Подкатегория",
+        "Штрихкод",
+
+        "Выручка",
+        "Кол-во",
+        "Доля выручки",
+        "Ср. выручка",
+        "Доля в ср выручке",
+        "Ср. μ (ед)",
+        "Ст откл. σ",
+        "CV Квар.",
+        "Макс. (ед)",
+        "Мин. (ед)",
+
+        "Нач. период",
+        "Конеч. период",
+        "Qпер. (мес)",
+        "Нулевые периоды (мес)",
+        "Периоды с продажами (мес)",
+
+        "Страх. запас (ед) (SS)",
+        "ROP (ед)",
+
+        "Дата остатков",
+        "Остаток доступно",
+        "Заказано",
+        "Остаток итого",
+        "Покрытие остатком, мес.",
+        "Покрытие с заказами, мес.",
+        "Отклонение доступного от ROP",
+        "Отклонение итого от ROP",
+        "Нужно заказать",
+        "Статус остатка",
+
+        "cat_id",
+        "subcat_id",
+        "item_id",
+        "date_json",
+        "quant_json",
+        "ls_quant",
+        "ls_date",
+        "is_quant",
+        "is_date",
+    ]
+
+    # В основной Матрице не выводим длинные сырые массивы по штрихкодам остатков.
+    df_matrix_export = df_matrix_export.drop(
+        columns=[
+            "Остатки по штрихкодам",
+            "Заказы по штрихкодам",
+        ],
+        errors="ignore",
+    )
+
+    df_matrix_export = df_matrix_export[
+        [c for c in prefer_cols if c in df_matrix_export.columns]
+        + [
+            c
+            for c in df_matrix_export.columns
+            if c not in prefer_cols
+        ]
+    ]
+
+    # ----------------------------------------------------------------------
+    # Иерархия Матрицы по датам продаж
+    # ----------------------------------------------------------------------
+    df_matrix_export = _make_matrix_dates_hierarchical(
+        df_matrix_export,
+        df_raw,
+    )
+
+    df_matrix_xlsx = df_matrix_export.drop(
+        columns=[
+            c
+            for c in SERVICE_COLS
+            if c in df_matrix_export.columns
+        ],
+        errors="ignore",
+    )
+
+    # ----------------------------------------------------------------------
+    # Штрихкоды продаж
+    # ----------------------------------------------------------------------
     df_barcodes = df_barcodes.rename(
         columns={
             "fullname": "Номенклатура",
@@ -869,78 +1143,110 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         }
     )
 
-    # порядок колонок (Матрица)
-    prefer_cols = [
-        "ABC", "XYZ",
-        "Номенклатура", "Артикул", "Производитель",
-        "Категория", "Подкатегория",
-        "Штрихкод",
-        "Выручка", "Кол-во", "Доля выручки",
-        "Ср. выручка", "Доля в ср выручке",
-        "Ср. μ (ед)", "Ст откл. σ", "CV Квар.", "Макс. (ед)", "Мин. (ед)",
-        "Нач. период", "Конеч. период", "Qпер. (мес)", "Нулевые периоды (мес)", "Периоды с продажами (мес)",
-        "Страх. запас (ед) (SS)", "ROP (ед)",
-        "cat_id", "subcat_id", "item_id", "date_json", "quant_json", "ls_quant", "ls_date", "is_quant", "is_date",
-    ]
-    df_matrix_export = df_matrix_export[
-        [c for c in prefer_cols if c in df_matrix_export.columns]
-        + [c for c in df_matrix_export.columns if c not in prefer_cols]
-    ]
-
-    # детализация по датам + по одному штрихкоду в детальной строке
-    df_matrix_export = _make_matrix_dates_hierarchical(df_matrix_export, df_raw)
-    df_matrix_xlsx = df_matrix_export.drop(columns=[c for c in SERVICE_COLS if c in df_matrix_export.columns], errors="ignore")
-
-
-    # штрихкоды: иерархия
     df_barcodes = _make_barcodes_hierarchical(df_barcodes)
 
-    # Export
+    # ----------------------------------------------------------------------
+    # Запись DataFrame в XLSX
+    # ----------------------------------------------------------------------
     out = BytesIO()
     manufacturer_sheets: List[str] = []
 
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        df_matrix_xlsx.to_excel(writer, index=False, sheet_name="Матрица")
-        df_barcodes.to_excel(writer, index=False, sheet_name="Штрихкоды")
-        manufacturer_sheets = _build_manufacturers_sheets(writer, df_matrix_xlsx)
+        df_matrix_xlsx.to_excel(
+            writer,
+            index=False,
+            sheet_name="Матрица",
+        )
 
+        df_stocks_xlsx.to_excel(
+            writer,
+            index=False,
+            sheet_name="Остатки",
+        )
+
+        df_barcodes.to_excel(
+            writer,
+            index=False,
+            sheet_name="Штрихкоды",
+        )
+
+        manufacturer_sheets = _build_manufacturers_sheets(
+            writer,
+            df_matrix_xlsx,
+        )
 
     out.seek(0)
     wb = load_workbook(out)
 
-    # TOC
+    # ----------------------------------------------------------------------
+    # Оглавление
+    # ----------------------------------------------------------------------
     toc_name = _build_toc_simple_grouped(
         wb,
         toc_name="Оглавление",
-        main_sheets=["Матрица", "Штрихкоды", ],
+        main_sheets=[
+            "Матрица",
+            "Остатки",
+            "Штрихкоды",
+        ],
         manufacturers_parent="Производители",
         manufacturer_sheets=manufacturer_sheets,
     )
 
-    # ================
-    # Матрица style
-    # ================
+    # ----------------------------------------------------------------------
+    # Матрица
+    # ----------------------------------------------------------------------
     ws_m = wb["Матрица"]
+
     _style_sheet_basic(
         ws_m,
         title="Ассортиментная матрица",
-        subtitle=f"Период: {start} — {end}",
+        subtitle=(
+            f"Период продаж: {start} — {end}. "
+            "Остатки — актуальные на дату загрузки."
+        ),
         toc_name=toc_name,
         header_row=4,
         freeze_cell="D5",
     )
-    _apply_number_formats(ws_m, header_row=4)
 
+    _apply_number_formats(ws_m, header_row=4)
     _apply_period_month_format(ws_m, header_row=4)
-    _set_fixed_widths(ws_m, header_row=4, numeric_width=12, text_width=26)
+    _set_fixed_widths(
+        ws_m,
+        header_row=4,
+        numeric_width=14,
+        text_width=26,
+    )
 
     _hide_columns_by_headers(
         ws_m,
-        ["item_id", "subcat_id", "cat_id", "date_json", "quant_json", "ls_quant", "ls_date", "is_quant", "is_date"],
+        [
+            "item_id",
+            "subcat_id",
+            "cat_id",
+            "date_json",
+            "quant_json",
+            "ls_quant",
+            "ls_date",
+            "is_quant",
+            "is_date",
+        ],
         header_row=4,
     )
 
-    _highlight_columns(ws_m, ["Страх. запас (ед) (SS)", "ROP (ед)"], header_row=4)
+    _highlight_columns(
+        ws_m,
+        [
+            "Страх. запас (ед) (SS)",
+            "ROP (ед)",
+            "Остаток доступно",
+            "Остаток итого",
+            "Нужно заказать",
+            "Статус остатка",
+        ],
+        header_row=4,
+    )
 
     _outline_group_children(
         ws_m,
@@ -952,10 +1258,55 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
 
     _add_footnote(ws_m, header_row=4)
 
-    # ================
-    # Штрихкоды style
-    # ================
+    # ----------------------------------------------------------------------
+    # Остатки
+    # ----------------------------------------------------------------------
+    ws_s = wb["Остатки"]
+
+    _style_sheet_basic(
+        ws_s,
+        title="Текущие остатки",
+        subtitle=(
+            "Одна строка = один SKU. "
+            "Складские колонки показывают текущий доступный остаток "
+            "и уже заказанное количество."
+        ),
+        toc_name=toc_name,
+        header_row=4,
+        freeze_cell="D5",
+    )
+
+    _apply_number_formats(ws_s, header_row=4)
+    _set_fixed_widths(
+        ws_s,
+        header_row=4,
+        numeric_width=14,
+        text_width=26,
+    )
+
+    _hide_columns_by_headers(
+        ws_s,
+        ["item_id"],
+        header_row=4,
+    )
+
+    _highlight_columns(
+        ws_s,
+        [
+            "Остаток доступно",
+            "Остаток итого",
+            "ROP (ед)",
+            "Нужно заказать",
+            "Статус остатка",
+        ],
+        header_row=4,
+    )
+
+    # ----------------------------------------------------------------------
+    # Штрихкоды
+    # ----------------------------------------------------------------------
     ws_b = wb["Штрихкоды"]
+
     _style_sheet_basic(
         ws_b,
         title="Детализация по штрихкодам",
@@ -964,9 +1315,20 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         header_row=4,
         freeze_cell="C5",
     )
+
     _apply_number_formats(ws_b, header_row=4)
-    _set_fixed_widths(ws_b, header_row=4, numeric_width=12, text_width=26)
-    _hide_columns_by_headers(ws_b, ["item_id"], header_row=4)
+    _set_fixed_widths(
+        ws_b,
+        header_row=4,
+        numeric_width=12,
+        text_width=26,
+    )
+
+    _hide_columns_by_headers(
+        ws_b,
+        ["item_id"],
+        header_row=4,
+    )
 
     _outline_group_children(
         ws_b,
@@ -976,11 +1338,12 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         collapse_by_default=True,
     )
 
-    # =====================
-    # Производители sheet
-    # =====================
+    # ----------------------------------------------------------------------
+    # Производители
+    # ----------------------------------------------------------------------
     if "Производители" in wb.sheetnames:
         ws_p = wb["Производители"]
+
         _style_sheet_basic(
             ws_p,
             title="Производители",
@@ -989,12 +1352,18 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
             header_row=4,
             freeze_cell="C5",
         )
-        _apply_number_formats(ws_p, header_row=4)
-        _set_fixed_widths(ws_p, header_row=4, numeric_width=12, text_width=26)
 
-        # добавим колонку "Перейти"
+        _apply_number_formats(ws_p, header_row=4)
+        _set_fixed_widths(
+            ws_p,
+            header_row=4,
+            numeric_width=12,
+            text_width=26,
+        )
+
         header_row = 4
         last_col = ws_p.max_column + 1
+
         ws_p.cell(header_row, last_col, "Перейти").fill = fill_header
         ws_p.cell(header_row, last_col, "Перейти").font = font_header
         ws_p.cell(header_row, last_col, "Перейти").alignment = align_header
@@ -1002,41 +1371,61 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
         ws_p.column_dimensions[get_column_letter(last_col)].width = 14
 
         manu_col_idx = None
+
         for c in range(1, ws_p.max_column + 1):
-            if (ws_p.cell(header_row, c).value or "").strip() == "Производитель":
+            if (
+                str(ws_p.cell(header_row, c).value or "").strip()
+                == "Производитель"
+            ):
                 manu_col_idx = c
                 break
 
         if manu_col_idx:
             for r in range(header_row + 1, ws_p.max_row + 1):
                 manu = ws_p.cell(r, manu_col_idx).value
-                manu = "Нет производителя" if manu is None else str(manu).strip()
+                manu = (
+                    "Нет производителя"
+                    if manu is None
+                    else str(manu).strip()
+                )
+
                 sheet = _safe_sheet_name(manu)
+
                 if sheet not in wb.sheetnames:
                     continue
+
                 cell = ws_p.cell(r, last_col, "Открыть →")
                 cell.hyperlink = f"#{sheet}!A1"
-                cell.font = Font(name="Helvetica", size=11, bold=True, color="1F5A7A")
+                cell.font = Font(
+                    name="Helvetica",
+                    size=11,
+                    bold=True,
+                    color="1F5A7A",
+                )
                 cell.border = border_thin
                 cell.alignment = align_center
+
                 if (r - (header_row + 1)) % 2:
                     cell.fill = fill_zebra
 
-    # =========================
-    # Sheets by manufacturer
-    # =========================
-    for s in manufacturer_sheets:
-        if s not in wb.sheetnames:
+    # ----------------------------------------------------------------------
+    # Листы производителей
+    # ----------------------------------------------------------------------
+    for sheet_name in manufacturer_sheets:
+        if sheet_name not in wb.sheetnames:
             continue
-        ws = wb[s]
+
+        ws = wb[sheet_name]
+
         _style_sheet_basic(
             ws,
-            title=f"Производитель: {s}",
+            title=f"Производитель: {sheet_name}",
             subtitle=f"Период: {start} — {end}",
             toc_name=toc_name,
             header_row=4,
             freeze_cell="C5",
         )
+
         _outline_group_children(
             ws,
             marker_header="Дата продажи",
@@ -1044,13 +1433,41 @@ def build_matrix_excel_bytes(engine, df_matrix: pd.DataFrame, start: str, end: s
             header_row=4,
             collapse_by_default=True,
         )
+
         _apply_number_formats(ws, header_row=4)
         _apply_period_month_format(ws, header_row=4)
-        _set_fixed_widths(ws, header_row=4, numeric_width=12, text_width=26)
-        _highlight_columns(ws, ["Страх. запас (ед) (SS)", "ROP (ед)"], header_row=4)
-        _hide_columns_by_headers(ws, ["item_id", "subcat_id", "cat_id", "date_json", "quant_json"], header_row=4)
+        _set_fixed_widths(
+            ws,
+            header_row=4,
+            numeric_width=14,
+            text_width=26,
+        )
+
+        _highlight_columns(
+            ws,
+            [
+                "Страх. запас (ед) (SS)",
+                "ROP (ед)",
+                "Остаток доступно",
+                "Остаток итого",
+                "Нужно заказать",
+                "Статус остатка",
+            ],
+            header_row=4,
+        )
+
+        _hide_columns_by_headers(
+            ws,
+            [
+                "item_id",
+                "subcat_id",
+                "cat_id",
+                "date_json",
+                "quant_json",
+            ],
+            header_row=4,
+        )
 
     final = BytesIO()
     wb.save(final)
     return final.getvalue()
-
