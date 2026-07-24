@@ -1,6 +1,7 @@
 # pages/matrix/data.py
 from __future__ import annotations
 
+import json
 import locale
 import re
 from typing import Any
@@ -137,31 +138,73 @@ def _is_empty(value: Any) -> bool:
     return False
 
 
-def _parse_warehouse_qty(value: Any) -> dict[str, float]:
+def _parse_stock_qty(value: Any) -> dict[str, float]:
     """
-    Разбирает строку вида:
+    Разбирает значения остатков вида:
 
-    [''ОСНОВНОЙ склад - 0 шт.'' ''Капитолий Вернандского - 1 шт.''
-     ''ОСНОВНОЙ склад - 3 шт.'' ''Европарк - 2 шт.'']
+        ["Европарк - 2 шт.", "ОСНОВНОЙ склад - 1364 шт."]
 
-    Если один и тот же склад встречается несколько раз, количества СУММИРУЮТСЯ.
+    или:
+
+        ["2000000001944 - 23 шт.", "2000000001944 - 984 шт."]
+
+    Если один и тот же склад / штрихкод встречается несколько раз,
+    количества суммируются.
     """
     if _is_empty(value):
         return {}
 
-    text = str(value)
+    raw_values = None
 
+    if isinstance(value, (list, tuple, np.ndarray)):
+        raw_values = list(value)
+    else:
+        text = str(value).strip()
+
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                raw_values = parsed
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raw_values = None
+
+    result: dict[str, float] = {}
+
+    if raw_values is not None:
+        for item in raw_values:
+            match = re.match(
+                r"^\s*(.+?)\s*-\s*(-?\d+(?:[.,]\d+)?)\s*шт\.\s*$",
+                str(item),
+                flags=re.IGNORECASE,
+            )
+
+            if not match:
+                continue
+
+            name = match.group(1).strip().strip("'\"")
+            if not name:
+                continue
+
+            try:
+                qty_value = float(match.group(2).replace(",", "."))
+            except (TypeError, ValueError):
+                continue
+
+            result[name] = result.get(name, 0.0) + qty_value
+
+        return result
+
+    # Fallback для старого строкового представления массива.
+    text = str(value)
     matches = re.findall(
-        r"([^'\[\]]+?)\s*-\s*(-?\d+(?:[.,]\d+)?)\s*шт\.",
+        r"[\"']?([^\"'\[\],]+?)[\"']?\s*-\s*(-?\d+(?:[.,]\d+)?)\s*шт\.",
         text,
         flags=re.IGNORECASE,
     )
 
-    result: dict[str, float] = {}
-
-    for warehouse, qty in matches:
-        warehouse = warehouse.strip().strip("'\"").strip()
-        if not warehouse:
+    for name, qty in matches:
+        name = str(name).strip().strip("'\"")
+        if not name:
             continue
 
         try:
@@ -169,9 +212,25 @@ def _parse_warehouse_qty(value: Any) -> dict[str, float]:
         except (TypeError, ValueError):
             continue
 
-        result[warehouse] = result.get(warehouse, 0.0) + qty_value
+        result[name] = result.get(name, 0.0) + qty_value
 
     return result
+
+
+def _format_stock_qty(value: Any) -> str:
+    """Компактное многострочное представление остатков для AG Grid."""
+    values = _parse_stock_qty(value)
+
+    if not values:
+        return ""
+
+    parts: list[str] = []
+
+    for name, qty in sorted(values.items(), key=lambda item: str(item[0]).lower()):
+        qty_text = f"{qty:,.0f}".replace(",", " ")
+        parts.append(f"{name} — {qty_text} шт.")
+
+    return "\n".join(parts)
 
 
 def fetch_current_stocks() -> pd.DataFrame:
@@ -268,7 +327,7 @@ def fetch_current_stocks() -> pd.DataFrame:
     # ----------------------------------------------------------------------
     # Остатки по складам
     # ----------------------------------------------------------------------
-    stock_dicts = stocks["warehouse_stocks"].apply(_parse_warehouse_qty)
+    stock_dicts = stocks["warehouse_stocks"].apply(_parse_stock_qty)
 
     stock_warehouses = sorted(
         {
@@ -287,7 +346,7 @@ def fetch_current_stocks() -> pd.DataFrame:
     # ----------------------------------------------------------------------
     # Заказы по складам
     # ----------------------------------------------------------------------
-    ordered_dicts = stocks["warehouse_ordered"].apply(_parse_warehouse_qty)
+    ordered_dicts = stocks["warehouse_ordered"].apply(_parse_stock_qty)
 
     ordered_warehouses = sorted(
         {
@@ -302,6 +361,13 @@ def fetch_current_stocks() -> pd.DataFrame:
         stocks[f"ordered_wh::{warehouse}"] = ordered_dicts.apply(
             lambda values, wh=warehouse: float(values.get(wh, 0.0))
         )
+
+    # ----------------------------------------------------------------------
+    # Остатки по штрихкодам для компактного отображения в Grid
+    # ----------------------------------------------------------------------
+    stocks["barcode_stocks_display"] = stocks["barcode_stocks"].apply(
+        _format_stock_qty
+    )
 
     stocks = stocks.drop(
         columns=["warehouse_stocks", "warehouse_ordered"],

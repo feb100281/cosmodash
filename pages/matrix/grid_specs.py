@@ -328,6 +328,23 @@ def get_matrix_column_defs(
         },
         _qty_col("Доступно", "stock_available", width=110),
         _qty_col("Заказано", "stock_ordered", width=110),
+        {
+            "headerName": "Остатки по штрихкодам",
+            "field": "barcode_stocks_display",
+            "minWidth": 280,
+            "width": 320,
+            "type": "leftAligned",
+            "wrapText": True,
+            "autoHeight": True,
+            "headerClass": "ag-center-header",
+            "columnGroupShow": "open",
+            "cellStyle": {
+                "whiteSpace": "pre-line",
+                "lineHeight": "18px",
+                "paddingTop": "7px",
+                "paddingBottom": "7px",
+            },
+        },
 
         {
             "headerName": "Покрытие, мес.",

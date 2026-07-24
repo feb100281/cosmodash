@@ -1,4 +1,3 @@
-# pages/matrix/ids.py
 from dataclasses import dataclass
 
 
@@ -60,12 +59,16 @@ class MatrixRightIds:
     header: str = "matrix_header_container"
     summary: str = "matrix_summary_container"
 
-    # Download
+    # Full matrix download
     download_btn: str = "matrix_download_excel_btn"
     download: str = "matrix_download_excel"
 
     download_csv_btn: str = "matrix_download_csv_btn"
     download_csv: str = "matrix_download_csv"
+
+    # Stocks-only download
+    stocks_download_btn: str = "matrix_stocks_download_excel_btn"
+    stocks_download: str = "matrix_stocks_download_excel"
 
     # Filters in the right header
     manu_ms: str = "matrix_manu_ms"
