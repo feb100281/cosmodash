@@ -26,7 +26,13 @@ sudo pkill -f gunicorn
 Перезагрузка сайта
 nohup gunicorn wsgi:server -b 0.0.0.0:8050 > gunicorn.log 2>&1 &
 
-
+⏱️ ПЕРЕЗАПУСК СЕРВИСА wit timeout
+──────────────────────
+nohup gunicorn wsgi:server \
+  -b 0.0.0.0:8050 \
+  --timeout 300 \
+  --workers 1 \
+  > gunicorn.log 2>&1 &
 
 !!!! Если нужно обновить редиску не забываем в .env раскоментить серверные настройки
 

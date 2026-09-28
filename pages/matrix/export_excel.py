@@ -12,37 +12,51 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
 
-# =========================
-# Styles (простые, деловые)
-# =========================
-TITLE_COLOR = "123A52"
-HEADER_COLOR = "DCEAF6"
-ZEBRA_COLOR = "F7F9FC"
-LINK_FILL = "1F5A7A"
-LINK_TEXT = "FFFFFF"
+from .xl_brand import (
+    FMT_DEC,
+    FMT_MONEY,
+    FMT_QTY,
+    FMT_SHARE,
+    FONT,
+    LINE,
+    MUTED,
+    NAVY,
+    NAVY_3,
+    SURFACE_3,
+    SURFACE_4,
+    TEXT,
+    ZEBRA_ROW,
+    build_toc,
+    finalize,
+    page_setup,
+    toc_button,
+)
 
-# Акценты для важных колонок
-HIGHLIGHT_FILL = PatternFill("solid", fgColor="FFF4CC")        # мягкий желтый
-HIGHLIGHT_HEADER_FILL = PatternFill("solid", fgColor="FFE8A3") # header важн. колонок
+TITLE_COLOR = TEXT
+HEADER_COLOR = NAVY
+ZEBRA_COLOR = ZEBRA_ROW
 
-thin = Side(style="thin", color="D2D7DD")
+HIGHLIGHT_FILL = PatternFill("solid", fgColor=SURFACE_3)
+HIGHLIGHT_HEADER_FILL = PatternFill("solid", fgColor=NAVY_3)
+
+thin = Side(style="thin", color=LINE)
 border_thin = Border(left=thin, right=thin, top=thin, bottom=thin)
+border_body = Border(bottom=thin, right=thin)
 
 fill_header = PatternFill("solid", fgColor=HEADER_COLOR)
 fill_zebra = PatternFill("solid", fgColor=ZEBRA_COLOR)
-fill_link = PatternFill("solid", fgColor=LINK_FILL)
 
-font_title = Font(name="Helvetica", size=14, bold=True, color=TITLE_COLOR)
-font_subtitle = Font(name="Helvetica", size=11, color="5B6770")
-font_header = Font(name="Helvetica", size=11, bold=True, color="1F2D3D")
-font_body = Font(name="Helvetica", size=11, color="1F2D3D")
-font_link = Font(name="Helvetica", size=11, bold=True, color=LINK_TEXT)
-
-font_toc_child = Font(name="Helvetica", size=11, color="5B6770")
+font_title = Font(name=FONT, size=14, bold=True, color=TEXT)
+font_subtitle = Font(name=FONT, size=9, color=MUTED)
+font_header = Font(name=FONT, size=10, bold=True, color="FFFFFF")
+font_body = Font(name=FONT, size=10, color=TEXT)
+font_bold = Font(name=FONT, size=10, bold=True, color=TEXT)
+font_link = Font(name=FONT, size=10, bold=True, color=NAVY_3, underline=None)
 
 align_header = Alignment(horizontal="center", vertical="center", wrap_text=True)
 align_left = Alignment(horizontal="left", vertical="center", wrap_text=True)
 align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+align_right = Alignment(horizontal="right", vertical="center")
 
 
 # =========================
@@ -133,76 +147,51 @@ def _style_sheet_basic(
     subtitle: str,
     toc_name: str = "Оглавление",
     header_row: int = 4,
-    freeze_cell: str = "C5",  # заморозка 2 колонок + верх
+    freeze_cell: str = "C5",
 ):
-    """
-    Макет:
-      row1: Title
-      row2: Subtitle
-      row3: ссылка "← Оглавление" (без merge)
-      row4: header таблицы
-      row5+: данные
-    """
-    ws.sheet_view.showGridLines = False
-
+    """Строки: 1 — оглавление, 2 — заголовок, 3 — подзаголовок, 4 — шапка таблицы."""
     ws.insert_rows(1, 3)
+    page_setup(ws)
 
-    ws["A1"] = title
-    ws["A1"].font = font_title
-    ws.row_dimensions[1].height = 24
+    last_col = max(ws.max_column, 2)
+    max_row = ws.max_row
 
-    ws["A2"] = subtitle
-    ws["A2"].font = font_subtitle
+    toc_button(ws, 1, last_col, toc_name)
 
-    # --- Кнопка "← Оглавление" (merge на всю ширину таблицы) ---
-    last_col = ws.max_column
+    ws["A2"] = title.upper()
+    ws["A2"].font = font_title
+    ws.row_dimensions[2].height = 24
 
-    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
-
-    cell = ws.cell(3, 1, "← Оглавление")
-    cell.hyperlink = f"#{toc_name}!A1"
-    cell.font = font_link
-    cell.fill = fill_link
-    cell.alignment = Alignment(horizontal="left", vertical="center")
-
-    # Прокрашиваем и обводим всю merged-строку, чтобы выглядело как кнопка
+    ws["A3"] = subtitle
+    ws["A3"].font = font_subtitle
     for c in range(1, last_col + 1):
-        ws.cell(3, c).fill = fill_link
-        ws.cell(3, c).border = border_thin
-
-    ws.row_dimensions[3].height = 20
-
+        ws.cell(3, c).border = Border(bottom=Side(style="medium", color=NAVY))
+    ws.row_dimensions[3].height = 18
 
     ws.freeze_panes = freeze_cell
 
-    max_col = ws.max_column
-    max_row = ws.max_row
-
-    # Header
-    for c in range(1, max_col + 1):
+    for c in range(1, last_col + 1):
         cell = ws.cell(header_row, c)
         cell.fill = fill_header
         cell.font = font_header
         cell.alignment = align_header
         cell.border = border_thin
+    ws.row_dimensions[header_row].height = 32
 
-    # Body + zebra
     for r in range(header_row + 1, max_row + 1):
-        zebra = (r - (header_row + 1)) % 2
-        for c in range(1, max_col + 1):
+        for c in range(1, last_col + 1):
             cell = ws.cell(r, c)
-            cell.font = font_body
-            # серый хинт "раскройте +"
             if cell.value == "раскройте +":
-                cell.font = Font(name="Helvetica", size=10, color="9AA3AC", italic=True)
+                cell.font = Font(name=FONT, size=9, color=MUTED, italic=True)
                 cell.alignment = Alignment(horizontal="center", vertical="center")
-
-            cell.border = border_thin
-            cell.alignment = align_left
-            if zebra:
+            else:
+                cell.font = font_body
+                cell.alignment = align_left
+            cell.border = border_body
+            if r % 2 == 0:
                 cell.fill = fill_zebra
 
-    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(max_col)}{max_row}"
+    ws.auto_filter.ref = f"A{header_row}:{get_column_letter(last_col)}{max_row}"
 
 
 def _apply_number_formats(ws, header_row: int = 4):
@@ -219,8 +208,8 @@ def _apply_number_formats(ws, header_row: int = 4):
 
         # ₽
         if n in ("выручка", "amount", "сумма", "ср. выручка", "_amount"):
-            fmt = '#,##0" ₽"'
-            align = align_center
+            fmt = FMT_MONEY
+            align = align_right
         # qty
         elif (
             n in (
@@ -241,16 +230,38 @@ def _apply_number_formats(ws, header_row: int = 4):
                 "отклонение доступного от rop",
                 "отклонение итого от rop",
                 "нужно заказать",
+                "продажи в день, шт.",
+                "оборотов в год",
             )
             or n.startswith("остаток | ")
             or n.startswith("заказано | ")
         ):
-            fmt = "#,##0.00"
-            align = align_center
+            fmt = FMT_DEC
+            align = align_right
+        elif n in (
+            "оборачиваемость, дн.",
+            "дней с прихода",
+            "документов прихода",
+            "пришло всего, шт.",
+            "пришло за период, шт.",
+            "последняя партия, шт.",
+            "продано с прихода, шт.",
+            "страх. запас (ед) (ss)",
+            "rop (ед)",
+            "qпер. (мес)",
+            "нулевые периоды (мес)",
+            "периоды с продажами (мес)",
+        ):
+            fmt = FMT_QTY
+            align = align_right
+        elif n in ("цена закупки", "остаток по закупке"):
+            fmt = FMT_MONEY
+            align = align_right
         # %
-        elif n in ("доля", "share", "процент", "%", "доля выручки", "доля в ср выручке", "_share", "cum_share"):
-            fmt = "0.00%"
-            align = align_center
+        elif n in ("доля", "share", "процент", "%", "доля выручки", "доля в ср выручке", "_share",
+                   "cum_share", "реализация партии"):
+            fmt = FMT_SHARE
+            align = align_right
         else:
             continue
 
@@ -386,7 +397,7 @@ def _highlight_columns(ws, header_names: List[str], header_row: int = 4):
     for c in cols:
         hcell = ws.cell(header_row, c)
         hcell.fill = HIGHLIGHT_HEADER_FILL
-        hcell.font = Font(name="Helvetica", size=11, bold=True, color="1F2D3D")
+        hcell.font = font_header
 
         for r in range(header_row + 1, ws.max_row + 1):
             ws.cell(r, c).fill = HIGHLIGHT_FILL
@@ -435,7 +446,7 @@ def _outline_group_children(
                 cell = ws.cell(r, c)
                 if cell.value == "раскройте +":
                     continue
-                cell.font = Font(name="Helvetica", size=11, bold=True, color="1F2D3D")
+                cell.font = font_bold
 
         else:
             ws.row_dimensions[r].outlineLevel = 1
@@ -444,75 +455,6 @@ def _outline_group_children(
                 if current_parent:
                     ws.row_dimensions[current_parent].collapsed = True
             ws.cell(r, indent_col).alignment = Alignment(horizontal="left", vertical="center", indent=1, wrap_text=True)
-
-
-# =========================
-# TOC (простое, без merge)
-# =========================
-def _build_toc_simple_grouped(
-    wb,
-    toc_name: str,
-    main_sheets: List[str],
-    manufacturers_parent: str,
-    manufacturer_sheets: List[str],
-) -> str:
-    if toc_name in wb.sheetnames:
-        wb.remove(wb[toc_name])
-
-    ws = wb.create_sheet(toc_name, 0)
-    ws.sheet_view.showGridLines = False
-
-    ws["A1"] = "Оглавление"
-    ws["A1"].font = Font(name="Helvetica", size=16, bold=True, color=TITLE_COLOR)
-    ws.row_dimensions[1].height = 26
-
-    ws["A3"] = "Лист"
-    ws["B3"] = "Перейти"
-    for cell in (ws["A3"], ws["B3"]):
-        cell.fill = fill_header
-        cell.font = font_header
-        cell.alignment = align_header
-        cell.border = border_thin
-
-    ws.column_dimensions["A"].width = 46
-    ws.column_dimensions["B"].width = 16
-    ws.freeze_panes = "A4"
-
-    def add_row(r: int, name: str, child: bool = False) -> int:
-        cell_name = ws.cell(r, 1, name)
-        cell_link = ws.cell(r, 2, "Открыть →")
-        cell_link.hyperlink = f"#{name}!A1"
-
-        if child:
-            cell_name.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-            cell_name.font = font_toc_child
-            cell_link.font = Font(name="Helvetica", size=11, bold=True, color="6B7A86")
-        else:
-            cell_name.alignment = align_left
-            cell_name.font = font_body
-            cell_link.font = Font(name="Helvetica", size=11, bold=True, color="1F5A7A")
-
-        cell_name.border = border_thin
-        cell_link.border = border_thin
-
-        if (r - 4) % 2:
-            cell_name.fill = fill_zebra
-            cell_link.fill = fill_zebra
-
-        return r + 1
-
-    r = 4
-    for s in main_sheets:
-        if s in wb.sheetnames:
-            r = add_row(r, s, child=False)
-
-    if manufacturers_parent in wb.sheetnames:
-        r = add_row(r, manufacturers_parent, child=False)
-        for s in manufacturer_sheets:
-            if s in wb.sheetnames:
-                r = add_row(r, s, child=True)
-
-    return toc_name
 
 
 # =========================
@@ -809,7 +751,7 @@ def _add_footnote(ws, header_row: int = 4):
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last_col)
 
     cell = ws.cell(row, 1, text)
-    cell.font = Font(name="Helvetica", size=11, color="5B6770")
+    cell.font = Font(name=FONT, size=8, color=MUTED)
     cell.alignment = Alignment(
         horizontal="left",
         vertical="top",
@@ -830,6 +772,7 @@ def build_matrix_excel_bytes(
     df_matrix: pd.DataFrame,
     start: str,
     end: str,
+    scope: str = "",
 ) -> bytes:
     """
     XLSX:
@@ -932,6 +875,23 @@ def build_matrix_excel_bytes(
         "stock_status": "Статус остатка",
         "barcode_stocks": "Остатки по штрихкодам",
         "barcode_ordered": "Заказы по штрихкодам",
+        "turnover_status": "Статус оборачиваемости",
+        "turnover_days": "Оборачиваемость, дн.",
+        "turns_per_year": "Оборотов в год",
+        "avg_daily_sales": "Продажи в день, шт.",
+        "first_receipt_date": "Первый приход",
+        "last_receipt_date": "Последний приход",
+        "days_since_receipt": "Дней с прихода",
+        "receipts_docs": "Документов прихода",
+        "receipt_qty_total": "Пришло всего, шт.",
+        "receipt_qty_period": "Пришло за период, шт.",
+        "last_receipt_qty": "Последняя партия, шт.",
+        "sold_since_receipt": "Продано с прихода, шт.",
+        "sell_through": "Реализация партии",
+        "purchase_price": "Цена закупки",
+        "stock_value_purchase": "Остаток по закупке",
+        "period_days": "Дней в периоде",
+        "turnover_period": "Период оборачиваемости",
 
         # service
         "item_id": "item_id",
@@ -972,7 +932,8 @@ def build_matrix_excel_bytes(
     )
 
     df_matrix_export = df_matrix_export.drop(
-        columns=["cum_share", "_amount", "_share"],
+        columns=["cum_share", "_amount", "_share", "Дней в периоде", "Период оборачиваемости",
+                 "barcode_stocks_display"],
         errors="ignore",
     )
 
@@ -1181,16 +1142,34 @@ def build_matrix_excel_bytes(
     # ----------------------------------------------------------------------
     # Оглавление
     # ----------------------------------------------------------------------
-    toc_name = _build_toc_simple_grouped(
+    def _num_sum(col):
+        if col not in df_raw.columns:
+            return None
+        return float(pd.to_numeric(df_raw[col], errors="coerce").fillna(0).sum())
+
+    toc_name = "Оглавление"
+    build_toc(
         wb,
-        toc_name="Оглавление",
-        main_sheets=[
-            "Матрица",
-            "Остатки",
-            "Штрихкоды",
+        title="Ассортиментная матрица",
+        subtitle="ABC/XYZ-анализ, спрос, точка заказа и текущие остатки",
+        params=(
+            f"Рубли и штуки · период продаж: {start} — {end} · остатки на дату загрузки"
+            + (f" · {scope}" if scope else "")
+        ),
+        cards=[
+            ("ВЫРУЧКА ЗА ПЕРИОД, ₽", _num_sum("amount"), FMT_MONEY, f"{start} — {end}"),
+            ("ПРОДАНО, ШТ.", _num_sum("quant"), FMT_QTY, "за период"),
+            ("ДОСТУПНЫЙ ОСТАТОК, ШТ.", _num_sum("stock_available"), FMT_QTY, "на дату остатков"),
+            ("SKU В МАТРИЦЕ", len(df_raw), FMT_QTY, "с продажами или остатком"),
         ],
-        manufacturers_parent="Производители",
-        manufacturer_sheets=manufacturer_sheets,
+        sheets=[
+            ("Матрица", "SKU с ABC/XYZ, продажами, ROP, остатками и оборачиваемостью; «+» раскрывает продажи по месяцам"),
+            ("Остатки", "Одна строка — один SKU: остаток по складам, заказ, ROP, статус запаса"),
+            ("Штрихкоды", "Продажи в разрезе штрихкодов"),
+            ("Производители", "Сводка по производителям со ссылками на отдельные листы"),
+        ],
+        children={"Производители": manufacturer_sheets},
+        toc_name=toc_name,
     )
 
     # ----------------------------------------------------------------------
@@ -1204,6 +1183,7 @@ def build_matrix_excel_bytes(
         subtitle=(
             f"Период продаж: {start} — {end}. "
             "Остатки — актуальные на дату загрузки."
+            + (f" {scope}." if scope else "")
         ),
         toc_name=toc_name,
         header_row=4,
@@ -1395,13 +1375,8 @@ def build_matrix_excel_bytes(
                     continue
 
                 cell = ws_p.cell(r, last_col, "Открыть →")
-                cell.hyperlink = f"#{sheet}!A1"
-                cell.font = Font(
-                    name="Helvetica",
-                    size=11,
-                    bold=True,
-                    color="1F5A7A",
-                )
+                cell.hyperlink = f"#'{sheet}'!A1"
+                cell.font = font_link
                 cell.border = border_thin
                 cell.alignment = align_center
 
@@ -1467,6 +1442,8 @@ def build_matrix_excel_bytes(
             ],
             header_row=4,
         )
+
+    finalize(wb, ["Оглавление", "Матрица", "Остатки", "Штрихкоды", "Производители"])
 
     final = BytesIO()
     wb.save(final)

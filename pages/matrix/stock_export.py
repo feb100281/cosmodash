@@ -8,8 +8,24 @@ from io import BytesIO
 from typing import Any, Iterable
 
 import pandas as pd
+from datetime import datetime
+
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
+from .xl_brand import (
+    EXPENSE,
+    FMT_QTY,
+    OCCUPIED_BG,
+    WARN,
+    WARN_BG,
+    build_toc,
+    fill,
+    finalize,
+    font,
+    set_number_format,
+    style_table_sheet,
+)
 
 
 UNALLOCATED_LABEL = "НЕ РАСПРЕДЕЛЕНО В ИСТОЧНИКЕ"
@@ -414,454 +430,75 @@ def _prepare_control_df(
     )
 
 
-def _style_sheet(
-    ws,
-    *,
-    title: str,
-    stock_date: str | None = None,
-) -> None:
-    """
-    Единый строгий стиль для всех листов выгрузки остатков.
+QTY_HEADERS = [
+    "Доступный остаток",
+    "Заказано",
+    "Всего с заказами",
+    "Остаток",
+    "По магазинам",
+    "Расхождение магазины",
+    "По штрихкодам",
+    "Расхождение штрихкоды",
+]
 
-    Что делаем:
-    - строка 1: общий заголовок листа;
-    - строка 2: шапка таблицы;
-    - freeze F3: фиксируем строки 1-2 и первые 5 колонок;
-    - тонкая светло-серая сетка по всем ячейкам;
-    - лёгкая зебра по строкам данных;
-    - автофильтр;
-    - без стандартной Excel-сетки;
-    - числовые колонки выравниваем вправо;
-    - текстовые ключевые колонки — влево;
-    - строки "НЕ РАСПРЕДЕЛЕНО В ИСТОЧНИКЕ" выделяем мягким предупреждением;
-    - расхождения на листе "Контроль" визуально выделяем.
-    """
-    max_col = max(ws.max_column, 1)
-    max_row = max(ws.max_row, 2)
+WIDTHS = {
+    "Категория": 22,
+    "Подкатегория": 24,
+    "Производитель": 22,
+    "Номенклатура": 46,
+    "Артикул": 18,
+    "Штрихкоды товара": 28,
+    "Доступный остаток": 14,
+    "Заказано": 12,
+    "Всего с заказами": 14,
+    "Статус запаса": 26,
+    "Остатки по штрихкодам": 44,
+    "Магазин": 32,
+    "Штрихкод": 28,
+    "Остаток": 12,
+}
 
-    # ------------------------------------------------------------------
-    # Палитра
-    # ------------------------------------------------------------------
-    title_fill = PatternFill(
-        fill_type="solid",
-        fgColor="1F2937",
+
+def _style_sheet(ws, *, title: str, stock_date: str | None = None) -> None:
+    subtitle = f"Остатки на {stock_date}" if stock_date else "Текущие остатки"
+    hr = style_table_sheet(
+        ws,
+        title=title,
+        subtitle=subtitle,
+        header_row=1,
+        freeze_col=6 if ws.max_column >= 6 else 2,
+        key_headers=["Доступный остаток", "Остаток"],
+        wrap_headers=["Номенклатура", "Остатки по штрихкодам"],
     )
+    set_number_format(ws, hr, QTY_HEADERS, FMT_QTY)
+    set_number_format(ws, hr, ["Магазин | ", "Заказ | "], FMT_QTY, prefix=True)
 
-    header_fill = PatternFill(
-        fill_type="solid",
-        fgColor="E9EEF3",
-    )
+    for cc in range(1, ws.max_column + 1):
+        h = str(ws.cell(row=hr, column=cc).value or "")
+        width = WIDTHS.get(h)
+        if width is None and (h.startswith("Магазин | ") or h.startswith("Заказ | ")):
+            width = 18
+        ws.column_dimensions[get_column_letter(cc)].width = width or 16
 
-    zebra_fill = PatternFill(
-        fill_type="solid",
-        fgColor="F8FAFC",
-    )
+    for r in range(hr + 1, ws.max_row + 1):
+        values = [str(ws.cell(row=r, column=cc).value or "") for cc in range(1, ws.max_column + 1)]
+        if any(UNALLOCATED_LABEL in v for v in values):
+            for cc in range(1, ws.max_column + 1):
+                cell = ws.cell(row=r, column=cc)
+                cell.fill = fill(WARN_BG)
+                cell.font = font(10, True, WARN)
 
-    warning_fill = PatternFill(
-        fill_type="solid",
-        fgColor="FFF7E6",
-    )
-
-    warning_font = Font(
-        name="Helvetica Light",
-        size=10,
-        color="9A6700",
-        bold=True,
-    )
-
-    error_fill = PatternFill(
-        fill_type="solid",
-        fgColor="FDECEC",
-    )
-
-    error_font = Font(
-        name="Helvetica Light",
-        size=10,
-        color="B42318",
-        bold=True,
-    )
-
-    grid_side = Side(
-        style="thin",
-        color="D9DEE5",
-    )
-
-    cell_border = Border(
-        left=grid_side,
-        right=grid_side,
-        top=grid_side,
-        bottom=grid_side,
-    )
-
-    # ------------------------------------------------------------------
-    # 1. Общий заголовок листа
-    # ------------------------------------------------------------------
-    ws.merge_cells(
-        start_row=1,
-        start_column=1,
-        end_row=1,
-        end_column=max_col,
-    )
-
-    title_cell = ws.cell(
-        row=1,
-        column=1,
-    )
-
-    if stock_date:
-        title_cell.value = f"{title} — на {stock_date}"
-    else:
-        title_cell.value = title
-
-    title_cell.font = Font(
-        name="Helvetica Light",
-        size=12,
-        bold=True,
-        color="FFFFFF",
-    )
-
-    title_cell.fill = title_fill
-
-    title_cell.alignment = Alignment(
-        horizontal="left",
-        vertical="center",
-    )
-
-    title_cell.border = cell_border
-
-    ws.row_dimensions[1].height = 26
-
-    # Чтобы merged-заголовок визуально имел единый контур/заливку.
-    for col_idx in range(1, max_col + 1):
-        cell = ws.cell(
-            row=1,
-            column=col_idx,
-        )
-        cell.fill = title_fill
-        cell.border = cell_border
-
-    # ------------------------------------------------------------------
-    # 2. Шапка таблицы
-    # ------------------------------------------------------------------
-    for cell in ws[2]:
-        cell.font = Font(
-            name="Helvetica Light",
-            size=10,
-            bold=True,
-            color="1F2937",
-        )
-
-        cell.fill = header_fill
-
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center",
-            wrap_text=True,
-        )
-
-        cell.border = cell_border
-
-    ws.row_dimensions[2].height = 36
-
-    # ------------------------------------------------------------------
-    # 3. Основные строки + зебра + тонкая сетка
-    # ------------------------------------------------------------------
-    for row_idx in range(3, max_row + 1):
-        use_zebra = (row_idx - 3) % 2 == 1
-
-        for col_idx in range(1, max_col + 1):
-            cell = ws.cell(
-                row=row_idx,
-                column=col_idx,
-            )
-
-            cell.font = Font(
-                name="Helvetica Light",
-                size=10,
-                color="1F2937",
-            )
-
-            cell.alignment = Alignment(
-                vertical="center",
-            )
-
-            cell.border = cell_border
-
-            if use_zebra:
-                cell.fill = zebra_fill
-
-        ws.row_dimensions[row_idx].height = 20
-
-    # ------------------------------------------------------------------
-    # 4. Словарь заголовков -> номер колонки
-    # ------------------------------------------------------------------
-    header_to_col = {
-        str(
-            ws.cell(
-                row=2,
-                column=col,
-            ).value
-            or ""
-        ): col
-        for col in range(
-            1,
-            max_col + 1,
-        )
-    }
-
-    # ------------------------------------------------------------------
-    # 5. Ширины колонок
-    # ------------------------------------------------------------------
-    widths = {
-        "Категория": 22,
-        "Подкатегория": 24,
-        "Производитель": 22,
-        "Номенклатура": 48,
-        "Артикул": 18,
-        "Штрихкоды товара": 28,
-        "Доступный остаток": 18,
-        "Заказано": 14,
-        "Всего с заказами": 18,
-        "Статус запаса": 28,
-        "Остатки по штрихкодам": 44,
-        "Магазин": 34,
-        "Штрихкод": 30,
-        "Остаток": 14,
-        "По магазинам": 16,
-        "Расхождение магазины": 21,
-        "По штрихкодам": 17,
-        "Расхождение штрихкоды": 22,
-    }
-
-    for header, width in widths.items():
-        col = header_to_col.get(
-            header
-        )
-
-        if col:
-            ws.column_dimensions[
-                get_column_letter(col)
-            ].width = width
-
-    # Динамические колонки магазинов / заказов.
-    for col in range(
-        1,
-        max_col + 1,
-    ):
-        header = str(
-            ws.cell(
-                row=2,
-                column=col,
-            ).value
-            or ""
-        )
-
-        if (
-            header.startswith("Магазин | ")
-            or header.startswith("Заказ | ")
-        ):
-            ws.column_dimensions[
-                get_column_letter(col)
-            ].width = 21
-
-    # ------------------------------------------------------------------
-    # 6. Числовые форматы
-    # ------------------------------------------------------------------
-    numeric_headers = {
-        "Доступный остаток",
-        "Заказано",
-        "Всего с заказами",
-        "Остаток",
-        "По магазинам",
-        "Расхождение магазины",
-        "По штрихкодам",
-        "Расхождение штрихкоды",
-    }
-
-    for col in range(
-        1,
-        max_col + 1,
-    ):
-        header = str(
-            ws.cell(
-                row=2,
-                column=col,
-            ).value
-            or ""
-        )
-
-        is_qty = (
-            header in numeric_headers
-            or header.startswith("Магазин | ")
-            or header.startswith("Заказ | ")
-        )
-
-        if is_qty:
-            for row_idx in range(
-                3,
-                max_row + 1,
-            ):
-                cell = ws.cell(
-                    row=row_idx,
-                    column=col,
-                )
-
-                # Остатки у тебя фактически целые единицы.
-                cell.number_format = '#,##0'
-
-                cell.alignment = Alignment(
-                    horizontal="right",
-                    vertical="center",
-                )
-
-    # ------------------------------------------------------------------
-    # 7. Текстовые колонки
-    # ------------------------------------------------------------------
-    left_aligned_headers = {
-        "Категория",
-        "Подкатегория",
-        "Производитель",
-        "Номенклатура",
-        "Артикул",
-        "Штрихкоды товара",
-        "Статус запаса",
-        "Остатки по штрихкодам",
-        "Магазин",
-        "Штрихкод",
-    }
-
-    for header in left_aligned_headers:
-        col = header_to_col.get(
-            header
-        )
-
-        if not col:
-            continue
-
-        for row_idx in range(
-            3,
-            max_row + 1,
-        ):
-            ws.cell(
-                row=row_idx,
-                column=col,
-            ).alignment = Alignment(
-                horizontal="left",
-                vertical="center",
-                wrap_text=(
-                    header
-                    in {
-                        "Номенклатура",
-                        "Остатки по штрихкодам",
-                    }
-                ),
-            )
-
-    # ------------------------------------------------------------------
-    # 8. Выделение нераспределённых остатков
-    # ------------------------------------------------------------------
-    for row_idx in range(
-        3,
-        max_row + 1,
-    ):
-        row_values = [
-            str(
-                ws.cell(
-                    row=row_idx,
-                    column=col_idx,
-                ).value
-                or ""
-            )
-            for col_idx in range(
-                1,
-                max_col + 1,
-            )
-        ]
-
-        has_unallocated = any(
-            UNALLOCATED_LABEL in value
-            for value in row_values
-        )
-
-        if has_unallocated:
-            for col_idx in range(
-                1,
-                max_col + 1,
-            ):
-                cell = ws.cell(
-                    row=row_idx,
-                    column=col_idx,
-                )
-                cell.fill = warning_fill
-                cell.font = warning_font
-                cell.border = cell_border
-
-    # ------------------------------------------------------------------
-    # 9. Лист "Контроль": выделяем реальные расхождения
-    # ------------------------------------------------------------------
-    difference_headers = {
-        "Расхождение магазины",
-        "Расхождение штрихкоды",
-    }
-
-    for header in difference_headers:
-        col = header_to_col.get(
-            header
-        )
-
-        if not col:
-            continue
-
-        for row_idx in range(
-            3,
-            max_row + 1,
-        ):
-            cell = ws.cell(
-                row=row_idx,
-                column=col,
-            )
-
-            try:
-                value = float(
-                    cell.value or 0
-                )
-            except (
-                TypeError,
-                ValueError,
-            ):
-                value = 0.0
-
-            if abs(value) > EPS:
-                cell.fill = error_fill
-                cell.font = error_font
-
-    # ------------------------------------------------------------------
-    # 10. Freeze / filter / view
-    # ------------------------------------------------------------------
-
-    # F3:
-    # - фиксируем строки 1-2;
-    # - фиксируем A:E:
-    #   Категория / Подкатегория / Производитель /
-    #   Номенклатура / Артикул.
-    ws.freeze_panes = "F3"
-
-    ws.auto_filter.ref = (
-        f"A2:"
-        f"{get_column_letter(max_col)}"
-        f"{max_row}"
-    )
-
-    # Убираем стандартную сетку Excel:
-    # вместо неё используется наша тонкая светло-серая сетка.
-    ws.sheet_view.showGridLines = False
-
-    # Масштаб чуть комфортнее для широких таблиц.
-    ws.sheet_view.zoomScale = 90
-
-    # Активная ячейка после открытия.
-    ws.sheet_view.selection[0].activeCell = "F3"
-    ws.sheet_view.selection[0].sqref = "F3"
+    for cc in range(1, ws.max_column + 1):
+        if str(ws.cell(row=hr, column=cc).value or "").startswith("Расхождение"):
+            for r in range(hr + 1, ws.max_row + 1):
+                cell = ws.cell(row=r, column=cc)
+                try:
+                    bad = abs(float(cell.value or 0)) > EPS
+                except (TypeError, ValueError):
+                    bad = False
+                if bad:
+                    cell.fill = fill(OCCUPIED_BG)
+                    cell.font = font(10, True, EXPENSE)
 
 
 def _get_stock_date_label(
@@ -907,86 +544,51 @@ def _get_stock_date_label(
     return f"{first_date}–{last_date}"
 
 
-def build_stock_excel_bytes(
-    df_matrix: pd.DataFrame,
-) -> bytes:
-    """
-    Формирует Excel с тремя листами:
+def build_stock_excel_bytes(df_matrix: pd.DataFrame) -> bytes:
+    """Остатки: оглавление, «Остатки», «По магазинам», «По штрихкодам»."""
+    stock_date = _get_stock_date_label(df_matrix)
 
-    - Остатки
-    - По магазинам
-    - По штрихкодам
-
-    Дата остатков выводится в верхнем заголовке каждого листа,
-    поэтому отдельная колонка "Дата остатков" не нужна.
-
-    На листах детализации остаток, которого нет в детализации
-    источника, выводится отдельной строкой
-    "НЕ РАСПРЕДЕЛЕНО В ИСТОЧНИКЕ".
-
-    Поэтому сумма листа всегда совпадает с stock_available.
-    """
-    stock_date = _get_stock_date_label(
-        df_matrix
-    )
-
-    summary_df = _prepare_summary_df(
-        df_matrix
-    )
-
-    warehouse_df = _prepare_warehouse_df(
-        df_matrix
-    )
-
-    barcode_df = _prepare_barcode_df(
-        df_matrix
-    )
+    summary_df = _prepare_summary_df(df_matrix)
+    warehouse_df = _prepare_warehouse_df(df_matrix)
+    barcode_df = _prepare_barcode_df(df_matrix)
 
     output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, sheet_name="Остатки", index=False)
+        warehouse_df.to_excel(writer, sheet_name="По магазинам", index=False)
+        barcode_df.to_excel(writer, sheet_name="По штрихкодам", index=False)
 
-    with pd.ExcelWriter(
-        output,
-        engine="openpyxl",
-    ) as writer:
-        summary_df.to_excel(
-            writer,
-            sheet_name="Остатки",
-            index=False,
-            startrow=1,
-        )
+        wb = writer.book
+        _style_sheet(wb["Остатки"], title="ТЕКУЩИЕ ОСТАТКИ", stock_date=stock_date)
+        _style_sheet(wb["По магазинам"], title="ОСТАТКИ ПО МАГАЗИНАМ", stock_date=stock_date)
+        _style_sheet(wb["По штрихкодам"], title="ОСТАТКИ ПО ШТРИХКОДАМ", stock_date=stock_date)
 
-        warehouse_df.to_excel(
-            writer,
-            sheet_name="По магазинам",
-            index=False,
-            startrow=1,
-        )
+        def _sum(col):
+            if col not in summary_df.columns:
+                return None
+            return float(pd.to_numeric(summary_df[col], errors="coerce").fillna(0).sum())
 
-        barcode_df.to_excel(
-            writer,
-            sheet_name="По штрихкодам",
-            index=False,
-            startrow=1,
-        )
+        sku = int((pd.to_numeric(summary_df.get("Доступный остаток", 0), errors="coerce").fillna(0) > 0).sum()) \
+            if "Доступный остаток" in summary_df.columns else len(summary_df)
 
-        _style_sheet(
-            writer.book["Остатки"],
-            title="Текущие остатки ассортиментной матрицы",
-            stock_date=stock_date,
+        build_toc(
+            wb,
+            title="Остатки товаров",
+            subtitle="Доступный остаток и заказанный товар по SKU, магазинам и штрихкодам",
+            params=f"Штуки · остатки на {stock_date or '—'} · выгрузка {datetime.now():%d.%m.%Y}",
+            cards=[
+                ("ДОСТУПНО, ШТ.", _sum("Доступный остаток"), FMT_QTY, "весь доступный остаток"),
+                ("ЗАКАЗАНО, ШТ.", _sum("Заказано"), FMT_QTY, "в пути / в заказе"),
+                ("ВСЕГО С ЗАКАЗАМИ, ШТ.", _sum("Всего с заказами"), FMT_QTY, "доступно + заказано"),
+                ("SKU С ОСТАТКОМ", sku, FMT_QTY, f"из {len(summary_df)} SKU"),
+            ],
+            sheets=[
+                ("Остатки", "Одна строка — один SKU: остаток, заказ, статус запаса"),
+                ("По магазинам", "Остаток каждого SKU в разрезе магазинов и складов"),
+                ("По штрихкодам", "Остаток каждого SKU в разрезе штрихкодов"),
+            ],
         )
-
-        _style_sheet(
-            writer.book["По магазинам"],
-            title="Остатки по магазинам",
-            stock_date=stock_date,
-        )
-
-        _style_sheet(
-            writer.book["По штрихкодам"],
-            title="Остатки по штрихкодам",
-            stock_date=stock_date,
-        )
+        finalize(wb, ["Оглавление", "Остатки", "По магазинам", "По штрихкодам"])
 
     output.seek(0)
-
     return output.getvalue()

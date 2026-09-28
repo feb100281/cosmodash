@@ -6,7 +6,11 @@ import dash_ag_grid as dag
 
 from dash import dcc, Input, Output, State, no_update
 
-from .forecast import SEASONS_OPTIONS, forecast
+from datetime import datetime
+from io import StringIO
+
+from .forecast import SEASONS_OPTIONS, ForecastInputError, forecast
+from .forecast_export import build_forecast_excel_bytes
 from components import NoData
 
 from .empty_state import render_planning_empty_state
@@ -33,6 +37,9 @@ class PlaningPage:
         self.changepoint_prior_scale_id = "changepoint_prior_scale_id"
         self.changepoint_range_id = "changepoint_range_id"
         self.n_changepoints_id = "n_changepoints_id"
+        self.result_store_id = "forecast_result_store"
+        self.export_btn_id = "forecast_export_excel_btn"
+        self.export_dl_id = "forecast_export_excel"
     
 
         self.dates_fieldsets = dmc.Fieldset(
@@ -42,6 +49,7 @@ class PlaningPage:
                         dmc.DateInput(
                             placeholder="Введите дату",
                             label="Дата горизонта планирования",
+                            description="До какой даты нужен план, например 31 декабря",
                             variant="default",
                             size="sm",
                             radius="sm",
@@ -53,7 +61,8 @@ class PlaningPage:
                         ),
                         dmc.DateInput(
                             placeholder="Введите дату",
-                            label="Текущая дата",
+                            label="Текущая дата (необязательно)",
+                            description="Пусто — сегодня. Меняйте только для проверки модели на прошлом",
                             variant="default",
                             size="sm",
                             radius="sm",
@@ -65,7 +74,8 @@ class PlaningPage:
                         ),
                         dmc.DateInput(
                             placeholder="Введите дату начала",
-                            label="Исторические данные",
+                            label="История продаж с (необязательно)",
+                            description="Пусто — вся история",
                             variant="default",
                             size="sm",
                             radius="sm",
@@ -181,11 +191,27 @@ class PlaningPage:
     def layout(self):
         return dmc.Container(
             children=[
-                dmc.Title("Планирование продаж и доходной части", order=1, c="teal"),
-                dmc.Text(
-                    "В данном разделе осуществляется планирование продаж и создание бюджетов доходной части",
-                    size="xs",
+                dmc.Group(
+                    justify="space-between",
+                    align="center",
+                    children=[
+                        dmc.Stack(gap=2, children=[
+                            dmc.Title("Планирование продаж", order=2),
+                            dmc.Text("Прогноз выручки до выбранного горизонта и план по месяцам",
+                                     size="sm", c="dimmed"),
+                        ]),
+                        dmc.Button(
+                            "Скачать план (Excel)",
+                            id=self.export_btn_id,
+                            color="teal",
+                            radius=0,
+                            disabled=True,
+                            leftSection=DashIconify(icon="mdi:file-excel-outline", width=18),
+                        ),
+                    ],
                 ),
+                dcc.Store(id=self.result_store_id),
+                dcc.Download(id=self.export_dl_id),
                 dmc.Spoiler(
                     dcc.Markdown(self.planning_memo, className="planing-memo"),
                     showLabel="Показать",
@@ -248,6 +274,8 @@ class PlaningPage:
 
         @app.callback(
             Output(conteiner, "children"),
+            Output(self.result_store_id, "data"),
+            Output(self.export_btn_id, "disabled"),
             Input(horizon, "value"),
             Input(current_date, "value"),
             Input(cut_off_historical, "value"),
@@ -272,7 +300,7 @@ class PlaningPage:
         ):
             def content():
                 date = pd.to_datetime(horizon).strftime("%Y-%m-%d")
-                data, yearly_season_chart, total_mape, table = forecast(
+                data, yearly_season_chart, total_mape, table, export = forecast(
                     horizon=date,
                     current_date=cur_date,
                     historical_cut_off=cut_off,
@@ -314,15 +342,31 @@ class PlaningPage:
                         },
                     ],
                 )
-                return plan_act_chart, yearly_season_chart, total_mape, table
+                return plan_act_chart, yearly_season_chart, total_mape, table, export
 
             if horizon:
-                plan_act_chart, yerly_season_chart, total_mape, table = content()
+                try:
+                    plan_act_chart, yerly_season_chart, total_mape, table, export = content()
+                except ForecastInputError as exc:
+                    return (
+                        dmc.Alert(str(exc), title="Проверьте даты", color="yellow", radius=0),
+                        None,
+                        True,
+                    )
+                store = {
+                    "frame": export["frame"].to_json(orient="records", date_format="iso"),
+                    "meta": export["meta"],
+                }
                 return dmc.Stack(
                     [
                         dmc.Title(
-                            f"Результаты планирования - MAPE = {total_mape:,.2f}%",
-                            order=2,
+                            f"Результаты планирования · ошибка модели по месяцам {total_mape:,.1f}%".replace(".", ","),
+                            order=3,
+                        ),
+                        dmc.Text(
+                            f"Факт по {pd.to_datetime(export['meta']['last_fact_date']):%d.%m.%Y}, "
+                            f"план по {pd.to_datetime(export['frame']['ds']).max():%d.%m.%Y}",
+                            size="sm", c="dimmed",
                         ),
                         dmc.Space(h=10),
                         dmc.Center(table),
@@ -331,7 +375,21 @@ class PlaningPage:
                         dmc.Space(h=10),
                         yerly_season_chart,
                     ]
-                )
+                ), store, False
             else:
-                return render_planning_empty_state()
+                return render_planning_empty_state(), None, True
+
+        @app.callback(
+            Output(self.export_dl_id, "data"),
+            Input(self.export_btn_id, "n_clicks"),
+            State(self.result_store_id, "data"),
+            prevent_initial_call=True,
+        )
+        def download_forecast(n, store):
+            if not n or not store:
+                return no_update
+            frame = pd.read_json(StringIO(store["frame"]), orient="records")
+            content = build_forecast_excel_bytes(frame, store["meta"])
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            return dcc.send_bytes(lambda b: b.write(content), f"sales_plan_{store['meta']['horizon']}_{stamp}.xlsx")
                 

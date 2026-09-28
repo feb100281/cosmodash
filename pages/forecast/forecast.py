@@ -35,6 +35,10 @@ SEASONS_OPTIONS = [
 ]
 
 
+class ForecastInputError(ValueError):
+    """Некорректные входные параметры прогноза — показываются пользователю."""
+
+
 def historical_data(start=None, end=None)->pd.DataFrame:
     conditions = ''
     if start and end:
@@ -69,15 +73,37 @@ def forecast(
         ):
     
     
-    current_date = pd.Timestamp.now().normalize() if not current_date else pd.to_datetime(current_date).normalize()
+    today = pd.Timestamp.now().normalize()
+    current_date = today if not current_date else pd.to_datetime(current_date).normalize()
+    horizon_dt = pd.to_datetime(horizon).normalize()
+    if current_date > today:
+        raise ForecastInputError(
+            f"«Текущая дата» ({current_date:%d.%m.%Y}) позже сегодняшнего дня. "
+            f"Дату, до которой нужен план, укажите в поле «Дата горизонта планирования», "
+            f"а «Текущую дату» оставьте пустой."
+        )
+    if horizon_dt <= current_date:
+        raise ForecastInputError(
+            f"Дата горизонта ({horizon_dt:%d.%m.%Y}) должна быть позже текущей даты "
+            f"({current_date:%d.%m.%Y}) — иначе планировать нечего."
+        )
     end = current_date.strftime('%Y-%m-%d')
     
     historical_cut_off = pd.to_datetime(historical_cut_off).normalize() if historical_cut_off else None
     start = historical_cut_off.strftime('%Y-%m-%d') if historical_cut_off else None
     
     data = historical_data(start=start,end=end)
-    
+    if data.empty:
+        raise ForecastInputError("Нет продаж за выбранный исторический период.")
+    data["ds"] = pd.to_datetime(data["ds"]).dt.normalize()
+
     horizon = pd.to_datetime(horizon).normalize()
+    last_ds = data["ds"].max()
+    if horizon <= last_ds:
+        raise ForecastInputError(
+            f"Горизонт планирования ({horizon:%d.%m.%Y}) должен быть позже последней даты "
+            f"продаж в расчёте ({last_ds:%d.%m.%Y})."
+        )
     
     model = Prophet(
         yearly_seasonality=yearly_seasonality,
@@ -92,13 +118,13 @@ def forecast(
     
     model.fit(data)
         
-    delta = horizon - current_date
-    num_days = delta.days
-    
-   
+    # периоды считаются от последней даты истории, а не от текущей даты
+    num_days = int((horizon - last_ds).days)
     future = model.make_future_dataframe(periods=num_days)
         
     forecast = model.predict(future)
+    for col in ("yhat", "yhat_lower", "yhat_upper"):
+        forecast[col] = forecast[col].clip(lower=0)
     
     def yearly_seasons():
         if not yearly_seasonality:
@@ -135,36 +161,25 @@ def forecast(
                 withTooltip=False
             )        
     
-    def mape(dff:pd.DataFrame):
-        dff['ds'] = pd.to_datetime(dff['ds']).dt.normalize()
-        cur_date = pd.to_datetime(current_date).normalize()
-        df = dff[dff['ds']<=cur_date]
-        df = df.pivot_table(
-            index='ds',
-            columns='type',
-            values='y',
-            aggfunc='sum'
-        ).reset_index().sort_values('ds').fillna(0)
-        df.columns = df.columns.get_level_values(-1)
-        
-        df['mape'] = np.where(
-           df['План'] == 0,0,
-           np.abs(df['План'] - df['Факт']) / df['План']
-        )
-        total_mape = df['mape'].mean() * 100
-        
-        df['eom'] = pd.to_datetime(df.ds) + pd.offsets.MonthEnd(0)
-        
-        monthly_mape = df.pivot_table(
-            index='eom',
-            values='mape',
-            aggfunc=('mean')
-        ).reset_index().sort_values('eom')
-        monthly_mape['mape'] =  monthly_mape['mape'] * 100
-        monthly_mape = monthly_mape.tail(24)
-        
-        return total_mape, monthly_mape
-        
+    def mape(dff: pd.DataFrame):
+        """
+        Ошибка модели по месяцам истории: сумма |факт − план| / сумма факта
+        (только полностью прошедшие месяцы). Дневная ошибка на продажах
+        с «нулевыми» днями неинформативна.
+        """
+        d = dff.copy()
+        d["ds"] = pd.to_datetime(d["ds"]).dt.normalize()
+        d = d[(d["ds"] >= data["ds"].min()) & (d["ds"] <= last_ds)]
+        d["eom"] = d["ds"] + pd.offsets.MonthEnd(0)
+        m = d.pivot_table(index="eom", columns="type", values="y", aggfunc="sum").fillna(0)
+        m = m[m.index <= last_ds]
+        if m.empty or "Факт" not in m or "План" not in m or m["Факт"].sum() == 0:
+            return float("nan"), pd.DataFrame(columns=["eom", "mape"])
+        err = (m["Факт"] - m["План"]).abs()
+        total = float(err.sum() / m["Факт"].abs().sum() * 100)
+        monthly = (err / m["Факт"].replace(0, np.nan) * 100).rename("mape").reset_index().tail(24)
+        return total, monthly
+
     def html_table(dff:pd.DataFrame):
         df = dff.copy()
         df['eom'] = pd.to_datetime(df['ds']) + pd.offsets.MonthEnd(0)
@@ -222,12 +237,34 @@ def forecast(
     
     df['ds'] = pd.to_datetime(df['ds']).dt.normalize()
     cur_date = pd.to_datetime(current_date).normalize()
-    ad_plan = plan[plan['ds']>=cur_date]
+    ad_plan = plan[pd.to_datetime(plan['ds']) > last_ds]
     dff = pd.concat([actuals,ad_plan])
     
     
     
-    return df, yearly_seasons(), total_mape, html_table(dff)
+    export = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
+    export["ds"] = pd.to_datetime(export["ds"]).dt.normalize()
+    fact = actuals.copy()
+    fact["ds"] = pd.to_datetime(fact["ds"]).dt.normalize()
+    export = export.merge(fact[["ds", "y"]].rename(columns={"y": "fact"}), on="ds", how="outer").sort_values("ds")
+    export = export[export["ds"] <= horizon]
+    meta = {
+        "current_date": cur_date.strftime("%Y-%m-%d"),
+        "last_fact_date": last_ds.strftime("%Y-%m-%d"),
+        "horizon": horizon.strftime("%Y-%m-%d"),
+        "history_start": data["ds"].min().strftime("%Y-%m-%d"),
+        "mape": float(total_mape) if pd.notna(total_mape) else None,
+        "params": {
+            "Годовая сезонность": "да" if yearly_seasonality else "нет",
+            "Недельная сезонность": "да" if weekly_seasonality else "нет",
+            "Режим сезонности": seasonality_mode,
+            "Чувствительность к изменениям тренда": changepoint_prior_scale,
+            "Доля истории для поиска изломов": changepoint_range,
+            "Максимум изломов тренда": n_changepoints,
+        },
+    }
+
+    return df, yearly_seasons(), total_mape, html_table(dff), {"frame": export, "meta": meta}
     
     
     

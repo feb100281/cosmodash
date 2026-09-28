@@ -313,842 +313,106 @@ def _prepare_stock_items(
 # Sunburst
 # ============================================================================
 
-# def build_stock_sunburst(
-#     df: pd.DataFrame,
-#     value_field: str = "stock_available",
-# ) -> go.Figure:
-#     """
-#     Структура текущих запасов:
-
-#         Все остатки
-#             ↓
-#         Категория
-#             ↓
-#         Подкатегория
-#             ↓
-#         Номенклатура
-
-#     В секторах показывается КОЛИЧЕСТВО, а не процент.
-#     Процент родительского уровня остаётся только в hover.
-#     """
-
-#     items = _prepare_stock_items(df)
-
-#     if items.empty:
-#         return empty_sunburst()
-
-#     allowed_fields = {
-#         "stock_available",
-#         "stock_ordered",
-#         "stock_total",
-#     }
-
-#     if value_field not in allowed_fields:
-#         value_field = "stock_available"
-
-#     # ================================================================
-#     # Метрика
-#     # ================================================================
-
-#     items[value_field] = (
-#         pd.to_numeric(
-#             items[value_field],
-#             errors="coerce",
-#         )
-#         .fillna(0)
-#     )
-
-#     items = items[
-#         items[value_field] > 0
-#     ].copy()
-
-#     if items.empty:
-
-#         labels = {
-#             "stock_available": "Нет товаров с доступным остатком",
-#             "stock_ordered": "Нет товаров в заказах",
-#             "stock_total": "Нет товаров в остатках и заказах",
-#         }
-
-#         return empty_sunburst(
-#             labels[value_field]
-#         )
-
-#     metric_titles = {
-#         "stock_available": "Доступный остаток",
-#         "stock_ordered": "Заказано",
-#         "stock_total": "Остаток с заказами",
-#     }
-
-#     metric_title = metric_titles[value_field]
-
-#     # ================================================================
-#     # Контрольные итоги
-#     # ================================================================
-
-#     total_value = float(
-#         items[value_field].sum()
-#     )
-
-#     total_available = float(
-#         items["stock_available"].sum()
-#     )
-
-#     total_ordered = float(
-#         items["stock_ordered"].sum()
-#     )
-
-#     total_stock = float(
-#         items["stock_total"].sum()
-#     )
-
-#     total_sku = int(
-#         len(items)
-#     )
-
-#     # ================================================================
-#     # Палитра
-#     #
-#     # Сдержанные цвета для бизнес-дашборда.
-#     # Категория получает свой основной цвет.
-#     # Подкатегории и SKU наследуют оттенок своей категории.
-#     # ================================================================
-
-#     category_palette = [
-#         "#2563EB",  # blue
-#         "#0F766E",  # teal
-#         "#D97706",  # amber
-#         "#7C3AED",  # violet
-#         "#DC2626",  # red
-#         "#0891B2",  # cyan
-#         "#4F46E5",  # indigo
-#         "#65A30D",  # lime
-#         "#BE185D",  # pink
-#         "#475569",  # slate
-#         "#0284C7",
-#         "#A16207",
-#     ]
-
-#     def hex_to_rgba(
-#         hex_color: str,
-#         alpha: float,
-#     ) -> str:
-#         """
-#         HEX -> rgba().
-#         """
-
-#         value = hex_color.lstrip("#")
-
-#         r = int(value[0:2], 16)
-#         g = int(value[2:4], 16)
-#         b = int(value[4:6], 16)
-
-#         return f"rgba({r}, {g}, {b}, {alpha})"
-
-#     # ================================================================
-#     # Nodes
-#     # ================================================================
-
-#     ids: list[str] = []
-#     labels: list[str] = []
-#     parents: list[str] = []
-#     values: list[float] = []
-#     colors: list[str] = []
-
-#     customdata: list[list[Any]] = []
-
-#     # ================================================================
-#     # ROOT
-#     # ================================================================
-
-#     root_id = "ROOT"
-
-#     ids.append(root_id)
-#     labels.append("Все остатки")
-#     parents.append("")
-#     values.append(total_value)
-
-#     # Тёмный нейтральный центр
-#     colors.append("#F8FAFC")
-
-#     customdata.append(
-#         [
-#             total_sku,
-#             total_available,
-#             total_ordered,
-#             total_stock,
-#             "",
-#             "",
-#             "",
-#         ]
-#     )
-
-#     # ================================================================
-#     # CATEGORY
-#     # ================================================================
-
-#     categories = (
-#         items
-#         .groupby(
-#             "cat_name",
-#             as_index=False,
-#         )
-#         .agg(
-#             value=(
-#                 value_field,
-#                 "sum",
-#             ),
-#             available=(
-#                 "stock_available",
-#                 "sum",
-#             ),
-#             ordered=(
-#                 "stock_ordered",
-#                 "sum",
-#             ),
-#             total=(
-#                 "stock_total",
-#                 "sum",
-#             ),
-#             sku=(
-#                 "_item_key",
-#                 "nunique",
-#             ),
-#         )
-#         .sort_values(
-#             "value",
-#             ascending=False,
-#         )
-#         .reset_index(drop=True)
-#     )
-
-#     for category_index, (_, category) in enumerate(
-#         categories.iterrows()
-#     ):
-
-#         category_name = category["cat_name"]
-
-#         category_id = (
-#             f"CAT::{category_name}"
-#         )
-
-#         base_color = category_palette[
-#             category_index % len(category_palette)
-#         ]
-
-#         # ------------------------------------------------------------
-#         # Категория
-#         # ------------------------------------------------------------
-
-#         ids.append(category_id)
-#         labels.append(category_name)
-#         parents.append(root_id)
-
-#         values.append(
-#             float(category["value"])
-#         )
-
-#         colors.append(base_color)
-
-#         customdata.append(
-#             [
-#                 int(category["sku"]),
-#                 float(category["available"]),
-#                 float(category["ordered"]),
-#                 float(category["total"]),
-#                 "",
-#                 "",
-#                 "",
-#             ]
-#         )
-
-#         category_items = items[
-#             items["cat_name"] == category_name
-#         ]
-
-#         # ============================================================
-#         # SUBCATEGORY
-#         # ============================================================
-
-#         subcategories = (
-#             category_items
-#             .groupby(
-#                 "sc_name",
-#                 as_index=False,
-#             )
-#             .agg(
-#                 value=(
-#                     value_field,
-#                     "sum",
-#                 ),
-#                 available=(
-#                     "stock_available",
-#                     "sum",
-#                 ),
-#                 ordered=(
-#                     "stock_ordered",
-#                     "sum",
-#                 ),
-#                 total=(
-#                     "stock_total",
-#                     "sum",
-#                 ),
-#                 sku=(
-#                     "_item_key",
-#                     "nunique",
-#                 ),
-#             )
-#             .sort_values(
-#                 "value",
-#                 ascending=False,
-#             )
-#         )
-
-#         for _, subcategory in subcategories.iterrows():
-
-#             subcategory_name = subcategory["sc_name"]
-
-#             subcategory_id = (
-#                 f"{category_id}"
-#                 f"::SC::{subcategory_name}"
-#             )
-
-#             ids.append(subcategory_id)
-#             labels.append(subcategory_name)
-#             parents.append(category_id)
-
-#             values.append(
-#                 float(subcategory["value"])
-#             )
-
-#             # Чуть светлее категории
-#             colors.append(
-#                 hex_to_rgba(
-#                     base_color,
-#                     0.72,
-#                 )
-#             )
-
-#             customdata.append(
-#                 [
-#                     int(subcategory["sku"]),
-#                     float(subcategory["available"]),
-#                     float(subcategory["ordered"]),
-#                     float(subcategory["total"]),
-#                     "",
-#                     "",
-#                     "",
-#                 ]
-#             )
-
-#             # ========================================================
-#             # SKU
-#             # ========================================================
-
-#             sku_items = (
-#                 category_items[
-#                     category_items["sc_name"]
-#                     == subcategory_name
-#                 ]
-#                 .sort_values(
-#                     value_field,
-#                     ascending=False,
-#                 )
-#             )
-
-#             for _, item in sku_items.iterrows():
-
-#                 item_key = item["_item_key"]
-
-#                 item_node_id = (
-#                     f"{subcategory_id}"
-#                     f"::ITEM::{item_key}"
-#                 )
-
-#                 ids.append(item_node_id)
-
-#                 labels.append(
-#                     item["fullname"]
-#                 )
-
-#                 parents.append(
-#                     subcategory_id
-#                 )
-
-#                 values.append(
-#                     float(
-#                         item[value_field]
-#                     )
-#                 )
-
-#                 # Самый лёгкий оттенок
-#                 colors.append(
-#                     hex_to_rgba(
-#                         base_color,
-#                         0.48,
-#                     )
-#                 )
-
-#                 customdata.append(
-#                     [
-#                         1,
-#                         float(
-#                             item["stock_available"]
-#                         ),
-#                         float(
-#                             item["stock_ordered"]
-#                         ),
-#                         float(
-#                             item["stock_total"]
-#                         ),
-#                         _safe_text(
-#                             item["abc"],
-#                             "—",
-#                         ),
-#                         _safe_text(
-#                             item["xyz"],
-#                             "—",
-#                         ),
-#                         _safe_text(
-#                             item["stock_status"],
-#                             "—",
-#                         ),
-#                     ]
-#                 )
-
-#     # ================================================================
-#     # Figure
-#     # ================================================================
-
-#     fig = go.Figure()
-
-#     fig.add_trace(
-#         go.Sunburst(
-#             ids=ids,
-#             labels=labels,
-#             parents=parents,
-#             values=values,
-
-#             branchvalues="total",
-
-#             # Категория + подкатегория.
-#             # До товара проваливаемся кликом.
-#             maxdepth=2,
-
-#             # --------------------------------------------------------
-#             # Подписи
-#             #
-#             # Было:
-#             #   label + percent parent
-#             #
-#             # Теперь:
-#             #   название
-#             #   11 153 ед.
-#             # --------------------------------------------------------
-
-#             texttemplate=(
-#                 "<b>%{label}</b>"
-#                 "<br>"
-#                 "%{value:,.0f} ед."
-#             ),
-
-#             insidetextorientation="auto",
-
-#             customdata=customdata,
-
-#             # --------------------------------------------------------
-#             # Hover
-#             # --------------------------------------------------------
-
-#             hovertemplate=(
-#                 "<b>%{label}</b>"
-#                 "<br>"
-#                 "────────────────────"
-#                 "<br>"
-#                 f"{metric_title}: "
-#                 "<b>%{value:,.0f} ед.</b>"
-#                 "<br>"
-#                 "Доля уровня: "
-#                 "<b>%{percentParent:.1%}</b>"
-#                 "<br><br>"
-#                 "SKU: "
-#                 "<b>%{customdata[0]:,.0f}</b>"
-#                 "<br>"
-#                 "Доступно: "
-#                 "<b>%{customdata[1]:,.0f} ед.</b>"
-#                 "<br>"
-#                 "Заказано: "
-#                 "<b>%{customdata[2]:,.0f} ед.</b>"
-#                 "<br>"
-#                 "Всего: "
-#                 "<b>%{customdata[3]:,.0f} ед.</b>"
-#                 "<br><br>"
-               
-#                 "<extra></extra>"
-#             ),
-
-#             marker=dict(
-#                 colors=colors,
-#                 line=dict(
-#                     color="rgba(255,255,255,0.90)",
-#                     width=2,
-#                 ),
-#             ),
-
-#             hoverlabel=dict(
-#                 bgcolor="white",
-#                 bordercolor="#CBD5E1",
-#                 font=dict(
-#                     family="Arial, sans-serif",
-#                     size=13,
-#                     color="#1E293B",
-#                 ),
-#             ),
-#         )
-#     )
-
-#     # ================================================================
-#     # Layout
-#     # ================================================================
-
-#     fig.update_layout(
-#         height=680,
-
-#         paper_bgcolor="white",
-#         plot_bgcolor="white",
-
-#         margin=dict(
-#             l=20,
-#             r=20,
-#             t=70,
-#             b=20,
-#         ),
-
-#         font=dict(
-#             family="Arial, sans-serif",
-#             size=12,
-#             color="#1E293B",
-#         ),
-
-#         title=dict(
-#             text=(
-#                 "<b>Структура текущих запасов</b>"
-#                 "<br>"
-#                 "<span style='font-size:12px;color:#64748B'>"
-#                 f"{metric_title}"
-#                 f"  ·  {total_value:,.0f} ед."
-#                 f"  ·  {total_sku:,} SKU"
-#                 "</span>"
-#             ),
-#             x=0.01,
-#             xanchor="left",
-#             y=0.98,
-#             yanchor="top",
-#         ),
-
-#         uniformtext=dict(
-#             minsize=10,
-#             mode="hide",
-#         ),
-#     )
-
-#     return fig
+STOCK_PALETTE = [
+    "#2F6656", "#9A6100", "#2F75B5", "#7B4437", "#5B9A83", "#8A6F9E",
+    "#B08A1E", "#5C7C8A", "#1F5E4E", "#C2703D", "#6C8E3E", "#4A4A4A",
+]
+
+STOCK_METRIC_TITLES = {
+    "stock_available": "Доступный остаток",
+    "stock_ordered": "Заказано",
+    "stock_total": "Остаток с заказами",
+}
+
+
+def _lighten(hex_color: str, factor: float) -> str:
+    v = hex_color.lstrip("#")
+    r, g, b = (int(v[i:i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (round(c + (255 - c) * factor) for c in (r, g, b))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def _stock_items(df: pd.DataFrame, value_field: str) -> pd.DataFrame:
+    items = _prepare_stock_items(df)
+    if items.empty:
+        return items
+    if value_field not in STOCK_METRIC_TITLES:
+        value_field = "stock_available"
+    items[value_field] = pd.to_numeric(items[value_field], errors="coerce").fillna(0)
+    return items[items[value_field] > 0].copy()
+
+
+def stock_category_summary(df: pd.DataFrame, value_field: str = "stock_available") -> pd.DataFrame:
+    """Категории по убыванию метрики: cat_name, value, sku, share, color."""
+    if value_field not in STOCK_METRIC_TITLES:
+        value_field = "stock_available"
+    items = _stock_items(df, value_field)
+    if items.empty:
+        return pd.DataFrame(columns=["cat_name", "value", "sku", "share", "color"])
+    cats = (
+        items.groupby("cat_name", as_index=False)
+        .agg(value=(value_field, "sum"), sku=("_item_key", "nunique"))
+        .sort_values("value", ascending=False)
+        .reset_index(drop=True)
+    )
+    total = float(cats["value"].sum()) or 1.0
+    cats["share"] = cats["value"] / total
+    cats["color"] = [STOCK_PALETTE[i % len(STOCK_PALETTE)] for i in range(len(cats))]
+    return cats
 
 
 def build_stock_sunburst(
     df: pd.DataFrame,
     value_field: str = "stock_available",
 ) -> go.Figure:
-    """
-    Лёгкий Sunburst по остаткам.
-
-    Иерархия:
-        Все остатки
-            ↓
-        Категория
-            ↓
-        Подкатегория
-
-    SKU внутрь Figure не передаются.
-    ABC / XYZ / статус здесь не используются.
-    """
-
-    items = _prepare_stock_items(df)
-
-    if items.empty:
-        return empty_sunburst()
-
-    allowed_fields = {
-        "stock_available",
-        "stock_ordered",
-        "stock_total",
-    }
-
-    if value_field not in allowed_fields:
+    """Категория → подкатегория; в центре — итог по метрике."""
+    if value_field not in STOCK_METRIC_TITLES:
         value_field = "stock_available"
-
-    # ================================================================
-    # Метрика
-    # ================================================================
-
-    items[value_field] = pd.to_numeric(
-        items[value_field],
-        errors="coerce",
-    ).fillna(0)
-
-    items = items[
-        items[value_field] > 0
-    ].copy()
-
+    items = _stock_items(df, value_field)
     if items.empty:
-        empty_messages = {
+        return empty_sunburst({
             "stock_available": "Нет товаров с доступным остатком",
             "stock_ordered": "Нет товаров в заказах",
             "stock_total": "Нет товаров в остатках и заказах",
-        }
+        }[value_field])
 
-        return empty_sunburst(
-            empty_messages[value_field]
-        )
+    metric_title = STOCK_METRIC_TITLES[value_field]
+    cats = stock_category_summary(df, value_field)
+    total_value = float(items[value_field].sum())
+    total_sku = int(items["_item_key"].nunique())
 
-    metric_titles = {
-        "stock_available": "Доступный остаток",
-        "stock_ordered": "Заказано",
-        "stock_total": "Остаток с заказами",
-    }
+    ids, labels, parents, values, colors, custom = [], [], [], [], [], []
 
-    metric_title = metric_titles[value_field]
-
-    # ================================================================
-    # Общие итоги
-    # ================================================================
-
-    total_value = float(
-        items[value_field].sum()
-    )
-
-    total_available = float(
-        items["stock_available"].sum()
-    )
-
-    total_ordered = float(
-        items["stock_ordered"].sum()
-    )
-
-    total_stock = float(
-        items["stock_total"].sum()
-    )
-
-    total_sku = int(
-        items["_item_key"].nunique()
-    )
-
-    # ================================================================
-    # Палитра
-    # ================================================================
-
-    category_palette = [
-        "#2563EB",  # blue
-        "#0F766E",  # teal
-        "#D97706",  # amber
-        "#7C3AED",  # violet
-        "#DC2626",  # red
-        "#0891B2",  # cyan
-        "#4F46E5",  # indigo
-        "#65A30D",  # green
-        "#BE185D",  # pink
-        "#475569",  # slate
-        "#0284C7",
-        "#A16207",
-    ]
-
-    def lighten_color(
-        hex_color: str,
-        factor: float = 0.25,
-    ) -> str:
-        """
-        Осветляет HEX-цвет смешиванием с белым.
-        """
-
-        value = hex_color.lstrip("#")
-
-        r = int(value[0:2], 16)
-        g = int(value[2:4], 16)
-        b = int(value[4:6], 16)
-
-        r = round(r + (255 - r) * factor)
-        g = round(g + (255 - g) * factor)
-        b = round(b + (255 - b) * factor)
-
-        return f"#{r:02X}{g:02X}{b:02X}"
-
-    # ================================================================
-    # Nodes
-    # ================================================================
-
-    ids = []
-    labels = []
-    parents = []
-    values = []
-    colors = []
-
-    # customdata:
-    # 0 = SKU
-    # 1 = available
-    # 2 = ordered
-    # 3 = total
-    customdata = []
-
-    # ================================================================
-    # ROOT
-    # ================================================================
-
-    root_id = "ROOT"
-
-    ids.append(root_id)
-    labels.append("Все остатки")
+    ids.append("ROOT")
+    labels.append(f"<b>{total_value:,.0f}</b><br>шт.".replace(",", " "))
     parents.append("")
     values.append(total_value)
+    colors.append("rgba(0,0,0,0)")
+    custom.append([metric_title, total_sku, 1.0])
 
-    colors.append("#F1F5F9")
+    for cat in cats.itertuples():
+        cat_id = f"CAT::{cat.cat_name}"
+        ids.append(cat_id)
+        labels.append(str(cat.cat_name))
+        parents.append("ROOT")
+        values.append(float(cat.value))
+        colors.append(cat.color)
+        custom.append([str(cat.cat_name), int(cat.sku), float(cat.share)])
 
-    customdata.append(
-        [
-            total_sku,
-            total_available,
-            total_ordered,
-            total_stock,
-        ]
-    )
-
-    # ================================================================
-    # CATEGORY
-    # ================================================================
-
-    categories = (
-        items
-        .groupby(
-            "cat_name",
-            as_index=False,
+        subs = (
+            items[items["cat_name"] == cat.cat_name]
+            .groupby("sc_name", as_index=False)
+            .agg(value=(value_field, "sum"), sku=("_item_key", "nunique"))
+            .sort_values("value", ascending=False)
+            .reset_index(drop=True)
         )
-        .agg(
-            value=(value_field, "sum"),
-            available=("stock_available", "sum"),
-            ordered=("stock_ordered", "sum"),
-            total=("stock_total", "sum"),
-            sku=("_item_key", "nunique"),
-        )
-        .sort_values(
-            "value",
-            ascending=False,
-        )
-        .reset_index(drop=True)
-    )
-
-    for category_index, (_, category) in enumerate(
-        categories.iterrows()
-    ):
-        category_name = category["cat_name"]
-
-        category_id = (
-            f"CAT::{category_name}"
-        )
-
-        category_color = category_palette[
-            category_index % len(category_palette)
-        ]
-
-        ids.append(category_id)
-        labels.append(category_name)
-        parents.append(root_id)
-
-        values.append(
-            float(category["value"])
-        )
-
-        colors.append(
-            category_color
-        )
-
-        customdata.append(
-            [
-                int(category["sku"]),
-                float(category["available"]),
-                float(category["ordered"]),
-                float(category["total"]),
-            ]
-        )
-
-        # ============================================================
-        # SUBCATEGORY
-        # ============================================================
-
-        category_items = items[
-            items["cat_name"] == category_name
-        ]
-
-        subcategories = (
-            category_items
-            .groupby(
-                "sc_name",
-                as_index=False,
-            )
-            .agg(
-                value=(value_field, "sum"),
-                available=("stock_available", "sum"),
-                ordered=("stock_ordered", "sum"),
-                total=("stock_total", "sum"),
-                sku=("_item_key", "nunique"),
-            )
-            .sort_values(
-                "value",
-                ascending=False,
-            )
-        )
-
-        for _, subcategory in subcategories.iterrows():
-            subcategory_name = subcategory["sc_name"]
-
-            subcategory_id = (
-                f"{category_id}"
-                f"::SC::{subcategory_name}"
-            )
-
-            ids.append(
-                subcategory_id
-            )
-
-            labels.append(
-                subcategory_name
-            )
-
-            parents.append(
-                category_id
-            )
-
-            values.append(
-                float(subcategory["value"])
-            )
-
-            colors.append(
-                lighten_color(
-                    category_color,
-                    0.28,
-                )
-            )
-
-            customdata.append(
-                [
-                    int(subcategory["sku"]),
-                    float(subcategory["available"]),
-                    float(subcategory["ordered"]),
-                    float(subcategory["total"]),
-                ]
-            )
-
-    # ================================================================
-    # Figure
-    # ================================================================
+        for j, sub in enumerate(subs.itertuples()):
+            ids.append(f"{cat_id}::SC::{sub.sc_name}")
+            labels.append(str(sub.sc_name))
+            parents.append(cat_id)
+            values.append(float(sub.value))
+            colors.append(_lighten(cat.color, min(0.25 + 0.08 * j, 0.6)))
+            custom.append([str(cat.cat_name), int(sub.sku), float(sub.value) / total_value])
 
     fig = go.Figure(
         go.Sunburst(
@@ -1156,104 +420,36 @@ def build_stock_sunburst(
             labels=labels,
             parents=parents,
             values=values,
-
             branchvalues="total",
-
-            customdata=customdata,
-
-            texttemplate=(
-                "<b>%{label}</b>"
-                "<br>"
-                "%{value:,.0f} ед."
-            ),
-
-            insidetextorientation="auto",
-
+            customdata=custom,
+            maxdepth=3,
+            sort=False,
+            insidetextorientation="radial",
+            texttemplate="%{label}",
             hovertemplate=(
-                "<b>%{label}</b>"
-                "<br>"
-                "────────────────────"
-                "<br>"
-                f"{metric_title}: "
-                "<b>%{value:,.0f} ед.</b>"
-                "<br><br>"
-                "SKU: "
-                "<b>%{customdata[0]:,.0f}</b>"
-                "<br>"
-                "Доступно: "
-                "<b>%{customdata[1]:,.0f} ед.</b>"
-                "<br>"
-                "Заказано: "
-                "<b>%{customdata[2]:,.0f} ед.</b>"
-                "<br>"
-                "Всего: "
-                "<b>%{customdata[3]:,.0f} ед.</b>"
+                "<b>%{label}</b><br>"
+                f"{metric_title}: " "<b>%{value:,.0f} шт.</b><br>"
+                "Доля в общем запасе: <b>%{percentRoot:.1%}</b><br>"
+                "Доля в родителе: <b>%{percentParent:.1%}</b><br>"
+                "SKU: <b>%{customdata[1]:,.0f}</b>"
                 "<extra></extra>"
             ),
-
-            marker=dict(
-                colors=colors,
-                line=dict(
-                    color="white",
-                    width=2,
-                ),
-            ),
-
+            marker=dict(colors=colors, line=dict(color="#FFFFFF", width=1.5)),
+            leaf=dict(opacity=1),
             hoverlabel=dict(
-                bgcolor="white",
-                bordercolor="#CBD5E1",
-                font=dict(
-                    family="Arial, sans-serif",
-                    size=13,
-                    color="#1E293B",
-                ),
+                bgcolor="#FFFFFF",
+                bordercolor="#D9D9D9",
+                font=dict(family="Roboto, Arial, sans-serif", size=12, color="#1F1F1F"),
             ),
         )
     )
-
-    # ================================================================
-    # Layout
-    # ================================================================
-
     fig.update_layout(
-        height=650,
-
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-
-        margin=dict(
-            l=15,
-            r=15,
-            t=70,
-            b=15,
-        ),
-
-        font=dict(
-            family="Arial, sans-serif",
-            size=12,
-            color="#1E293B",
-        ),
-
-        title=dict(
-            text=(
-                "<b>Структура текущих запасов</b>"
-                "<br>"
-                "<span style='font-size:12px;color:#64748B'>"
-                f"{metric_title}"
-                f" · {total_value:,.0f} ед."
-                f" · {total_sku:,} SKU"
-                "</span>"
-            ),
-            x=0.01,
-            xanchor="left",
-            y=0.98,
-            yanchor="top",
-        ),
-
-        uniformtext=dict(
-            minsize=10,
-            mode="hide",
-        ),
+        height=520,
+        margin=dict(l=8, r=8, t=8, b=8),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Roboto, Arial, sans-serif", size=12),
+        uniformtext=dict(minsize=10, mode="hide"),
+        separators=", ",
     )
-
     return fig

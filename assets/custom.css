@@ -272,3 +272,7 @@
 
 
 
+
+/* Матрица: заголовки групп колонок */
+.mx-group-header .ag-header-group-text { font-weight: 700; letter-spacing: .2px; }
+.mx-group-header .ag-header-expand-icon { color: #2F6656; }

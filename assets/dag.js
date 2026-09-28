@@ -86,3 +86,28 @@ dagfuncs.TwoDecimal = function(value) {
 
     return formatted;
 };
+
+// Целое или тире
+dagfuncs.IntOrDash = function(value) {
+    if (value === null || value === undefined || value === "" || isNaN(value)) return "—";
+    return new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0}).format(value);
+};
+
+// Рубли или тире
+dagfuncs.RUBOrDash = function(value) {
+    if (value === null || value === undefined || value === "" || isNaN(value)) return "—";
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency', currency: 'RUB', maximumFractionDigits: 0
+    }).format(value);
+};
+
+// Доля в % или тире
+dagfuncs.PctOrDash = function(value) {
+    if (value === null || value === undefined || value === "" || isNaN(value)) return "—";
+    return new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0}).format(value * 100) + " %";
+};
+
+dagfuncs.String = function(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    return String(value);
+};

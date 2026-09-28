@@ -17,9 +17,8 @@ def _qty_col(
         "headerName": header,
         "field": field,
         "width": width,
-        "valueFormatter": {"function": "TwoDecimal(params.value)"},
-        "cellStyle": {"textAlign": "center"},
-        "headerClass": "ag-center-header",
+        "type": "rightAligned",
+        "valueFormatter": {"function": "IntOrDash(params.value)"},
     }
 
     if column_group_show:
@@ -64,343 +63,184 @@ def _warehouse_columns(
     return result
 
 
+def _num(header, field, fn="TwoDecimal", width=110, *, hidden=False, tooltip=None, **extra):
+    col: Dict[str, Any] = {
+        "headerName": header,
+        "field": field,
+        "width": width,
+        "type": "rightAligned",
+        "valueFormatter": {"function": f"{fn}(params.value)"},
+    }
+    if hidden:
+        col["columnGroupShow"] = "open"
+    if tooltip:
+        col["headerTooltip"] = tooltip
+    col.update(extra)
+    return col
+
+
+def _txt(header, field, width=160, *, hidden=False, tooltip=None, **extra):
+    col: Dict[str, Any] = {"headerName": header, "field": field, "minWidth": width, "width": width}
+    if hidden:
+        col["columnGroupShow"] = "open"
+    if tooltip:
+        col["headerTooltip"] = tooltip
+    col.update(extra)
+    return col
+
+
+def _group(header, group_id, children):
+    return {
+        "headerName": header,
+        "groupId": group_id,
+        "marryChildren": True,
+        "openByDefault": False,
+        "headerClass": "ag-center-header mx-group-header",
+        "children": children,
+    }
+
+
+_BADGE_ABC = {
+    "styleConditions": [
+        {"condition": "params.value === 'A'", "style": {"color": "#1F5E4E", "fontWeight": 700}},
+        {"condition": "params.value === 'B'", "style": {"color": "#3D7A67", "fontWeight": 600}},
+        {"condition": "params.value === 'C'", "style": {"color": "#9A6100", "fontWeight": 600}},
+        {"condition": "params.value === 'X'", "style": {"color": "#1F5E4E", "fontWeight": 700}},
+        {"condition": "params.value === 'Y'", "style": {"color": "#3D7A67", "fontWeight": 600}},
+        {"condition": "params.value === 'Z'", "style": {"color": "#9A6100", "fontWeight": 600}},
+    ],
+    "defaultStyle": {"color": "var(--mantine-color-dimmed)"},
+}
+
+_STOCK_STATUS_STYLE = {
+    "styleConditions": [
+        {"condition": "params.value === 'Дефицит' || params.value === 'Нет остатка'",
+         "style": {"color": "#B4442E", "fontWeight": 600}},
+        {"condition": "params.value && params.value.startsWith('Избыток')",
+         "style": {"color": "#9A6100", "fontWeight": 600}},
+        {"condition": "params.value && params.value.startsWith('Без продаж')",
+         "style": {"color": "#7B4437", "fontWeight": 600}},
+        {"condition": "params.value === 'Достаточно'", "style": {"color": "#3D7A67"}},
+    ],
+}
+
+_TURNOVER_STATUS_STYLE = {
+    "styleConditions": [
+        {"condition": "params.value && params.value.startsWith('Неликвид')",
+         "style": {"color": "#7B4437", "fontWeight": 600}},
+        {"condition": "params.value && params.value.startsWith('Очень')",
+         "style": {"color": "#9A6100", "fontWeight": 600}},
+        {"condition": "params.value && params.value.startsWith('Медленная')",
+         "style": {"color": "#B08A1E"}},
+        {"condition": "params.value && params.value.startsWith('Быстрая')",
+         "style": {"color": "#1F5E4E", "fontWeight": 600}},
+        {"condition": "params.value && params.value.startsWith('Новый')",
+         "style": {"color": "#2F75B5"}},
+    ],
+}
+
+
 def get_matrix_column_defs(
     df: Optional[pd.DataFrame] = None,
 ) -> List[Dict[str, Any]]:
     """
-    ColumnDefs для таблицы ассортиментной матрицы.
-
-    df передаётся для динамического формирования колонок по складам.
+    По умолчанию видны ключевые колонки; остальные раскрываются
+    стрелкой в заголовке группы.
     """
-    column_defs: List[Dict[str, Any]] = [
+    warehouses = _warehouse_columns(df, "stock_wh::") + _warehouse_columns(df, "ordered_wh::", suffix=" — заказ")
+
+    return [
+        {"headerName": "item_id", "field": "item_id", "hide": True},
         {
-            "headerName": "item_id",
-            "field": "item_id",
-            "hide": True,
+            "headerName": "ABC",
+            "field": "abc",
+            "width": 72,
+            "pinned": "left",
+            "cellStyle": _BADGE_ABC,
+            "headerTooltip": "Вклад в выручку",
         },
         {
-            "headerName": "Рейтинги",
-            "groupId": "ratings",
-            "minWidth": 50,
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "children": [
-                {
-                    "headerName": "ABC",
-                    "field": "abc",
-                    "width": 90,
-                    "type": "leftAligned",
-                    "cellClass": "ag-firstcol-bg",
-                    "headerClass": "ag-center-header",
-                    "pinned": "left",
-                },
-                {
-                    "headerName": "XYZ",
-                    "field": "xyz",
-                    "width": 90,
-                    "type": "leftAligned",
-                    "cellClass": "ag-firstcol-bg",
-                    "headerClass": "ag-center-header",
-                    "pinned": "left",
-                },
-            ],
+            "headerName": "XYZ",
+            "field": "xyz",
+            "width": 72,
+            "pinned": "left",
+            "cellStyle": _BADGE_ABC,
+            "headerTooltip": "Стабильность спроса",
         },
         {
             "headerName": "Номенклатура",
-            "groupId": "product",
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "openByDefault": False,
-            "children": [
-                {
-                    "headerName": "Номенклатура",
-                    "field": "fullname",
-                    "minWidth": 235,
-                    "type": "leftAligned",
-                    "cellClass": "ag-firstcol-bg",
-                    "headerClass": "ag-center-header",
-                    "pinned": "left",
-                },
-                {
-                    "headerName": "Артикул",
-                    "field": "article",
-                    "minWidth": 135,
-                    "type": "leftAligned",
-                },
-                {
-                    "headerName": "Производитель",
-                    "field": "manu",
-                    "minWidth": 160,
-                    "filter": True,
-                    "type": "leftAligned",
-                },
-                {
-                    "headerName": "Штрихкоды",
-                    "field": "barcode",
-                    "minWidth": 190,
-                    "type": "leftAligned",
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Категория",
-                    "field": "cat_name",
-                    "minWidth": 170,
-                    "type": "leftAligned",
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Подкатегория",
-                    "field": "sc_name",
-                    "minWidth": 170,
-                    "type": "leftAligned",
-                    "columnGroupShow": "open",
-                },
-            ],
+            "field": "fullname",
+            "minWidth": 260,
+            "width": 300,
+            "pinned": "left",
+            "tooltipField": "fullname",
+            "cellStyle": {"fontWeight": 500},
         },
-        {
-            "headerName": "Статистика продаж",
-            "groupId": "stats",
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "children": [
-                {
-                    "headerName": "Выручка",
-                    "field": "amount",
-                    "valueFormatter": {"function": "RUB(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Кол-во",
-                    "field": "quant",
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Доля выручки",
-                    "field": "share",
-                    "valueFormatter": {"function": "FormatPercent(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                    "width": 110,
-                },
-                {
-                    "headerName": "Ср. выручка",
-                    "field": "mean_amount",
-                    "valueFormatter": {"function": "RUB(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Доля в ср. выручке",
-                    "field": "share_mean",
-                    "valueFormatter": {"function": "FormatPercent(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                    "width": 125,
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Ср. μ (ед)",
-                    "field": "mean_month",
-                    "width": 120,
-                    "cellStyle": {"textAlign": "center"},
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Ст. откл. σ",
-                    "field": "std_month",
-                    "width": 120,
-                    "cellStyle": {"textAlign": "center"},
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "CV",
-                    "field": "cv",
-                    "width": 100,
-                    "cellStyle": {"textAlign": "center"},
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "headerClass": "ag-center-header",
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Макс. (ед)",
-                    "field": "max_month",
-                    "width": 110,
-                    "cellStyle": {"textAlign": "center"},
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "headerClass": "ag-center-header",
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Мин. (ед)",
-                    "field": "min_month",
-                    "width": 110,
-                    "cellStyle": {"textAlign": "center"},
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "headerClass": "ag-center-header",
-                    "columnGroupShow": "open",
-                },
-            ],
-        },
-        {
-            "headerName": "Период продаж",
-            "groupId": "dates",
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "openByDefault": False,
-            "children": [
-                {
-                    "headerName": "Нач. период",
-                    "field": "min_date",
-                    "width": 130,
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Конеч. период",
-                    "field": "max_date",
-                    "width": 130,
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Qпер. (мес)",
-                    "field": "sales_period_months",
-                    "width": 110,
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "Нулевые периоды",
-                    "field": "missing_months",
-                    "width": 130,
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                    "columnGroupShow": "open",
-                },
-                {
-                    "headerName": "Периоды с продажами",
-                    "field": "month_count",
-                    "width": 145,
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                    "columnGroupShow": "open",
-                },
-            ],
-        },
-        {
-            "headerName": "Параметры запаса",
-            "groupId": "stock_params",
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "children": [
-                {
-                    "headerName": "SS (ед)",
-                    "field": "ss",
-                    "width": 100,
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-                {
-                    "headerName": "ROP (ед)",
-                    "field": "rop",
-                    "width": 100,
-                    "valueFormatter": {"function": "TwoDecimal(params.value)"},
-                    "cellStyle": {"textAlign": "center"},
-                    "headerClass": "ag-center-header",
-                },
-            ],
-        },
-    ]
-
-    current_stock_children: List[Dict[str, Any]] = [
-        {
-            "headerName": "Дата остатков",
-            "field": "stock_date",
-            "width": 125,
-            "cellStyle": {"textAlign": "center"},
-            "headerClass": "ag-center-header",
-        },
-        _qty_col("Доступно", "stock_available", width=110),
-        _qty_col("Заказано", "stock_ordered", width=110),
-        {
-            "headerName": "Остатки по штрихкодам",
-            "field": "barcode_stocks_display",
-            "minWidth": 280,
-            "width": 320,
-            "type": "leftAligned",
-            "wrapText": True,
-            "autoHeight": True,
-            "headerClass": "ag-center-header",
-            "columnGroupShow": "open",
-            "cellStyle": {
-                "whiteSpace": "pre-line",
-                "lineHeight": "18px",
-                "paddingTop": "7px",
-                "paddingBottom": "7px",
+        _group("Товар", "product", [
+            _txt("Производитель", "manu", 170),
+            _txt("Артикул", "article", 130, hidden=True),
+            _txt("Категория", "cat_name", 170, hidden=True),
+            _txt("Подкатегория", "sc_name", 170, hidden=True),
+            _txt("Штрихкоды", "barcode", 190, hidden=True, tooltipField="barcode"),
+        ]),
+        _group("Продажи за период", "stats", [
+            _num("Выручка", "amount", "RUB", 125),
+            _num("Кол-во", "quant", "IntOrDash", 90),
+            _num("Доля выручки", "share", "FormatPercent", 110),
+            _num("Ср. выручка / мес.", "mean_amount", "RUB", 130, hidden=True),
+            _num("Доля в ср. выручке", "share_mean", "FormatPercent", 130, hidden=True),
+            _num("Ср. μ, ед./мес.", "mean_month", "TwoDecimal", 115, hidden=True),
+            _num("σ", "std_month", "TwoDecimal", 90, hidden=True, tooltip="Стандартное отклонение продаж в месяц"),
+            _num("CV", "cv", "TwoDecimal", 80, hidden=True, tooltip="Коэффициент вариации σ/μ"),
+            _num("Макс., ед.", "max_month", "TwoDecimal", 95, hidden=True),
+            _num("Мин., ед.", "min_month", "TwoDecimal", 95, hidden=True),
+            _txt("Первая продажа", "min_date", 120, hidden=True),
+            _txt("Последняя продажа", "max_date", 130, hidden=True),
+            _num("Мес. в продаже", "sales_period_months", "IntOrDash", 115, hidden=True),
+            _num("Мес. без продаж", "missing_months", "IntOrDash", 115, hidden=True),
+            _num("Мес. с продажами", "month_count", "IntOrDash", 120, hidden=True),
+        ]),
+        _group("Запас", "current_stock", [
+            _num("Доступно", "stock_available", "IntOrDash", 100),
+            _num("Покрытие, мес.", "stock_cover_months", "TwoDecimal", 115,
+                 tooltip="На сколько месяцев хватит доступного остатка при среднем спросе"),
+            _txt("Статус запаса", "stock_status", 180, cellStyle=_STOCK_STATUS_STYLE),
+            _num("Нужно заказать", "order_need", "IntOrDash", 120),
+            _txt("Дата остатков", "stock_date", 115, hidden=True),
+            _num("Заказано", "stock_ordered", "IntOrDash", 100, hidden=True),
+            _num("С заказами, мес.", "stock_cover_months_total", "TwoDecimal", 125, hidden=True),
+            _num("SS, ед.", "ss", "IntOrDash", 90, hidden=True, tooltip="Страховой запас"),
+            _num("ROP, ед.", "rop", "IntOrDash", 90, hidden=True, tooltip="Точка заказа"),
+            _num("Δ к ROP", "stock_vs_rop", "TwoDecimal", 100, hidden=True),
+            {
+                "headerName": "Остатки по штрихкодам",
+                "field": "barcode_stocks_display",
+                "width": 300,
+                "wrapText": True,
+                "autoHeight": True,
+                "columnGroupShow": "open",
+                "cellStyle": {"whiteSpace": "pre-line", "lineHeight": "18px", "paddingTop": "6px", "paddingBottom": "6px"},
             },
-        },
-
-        {
-            "headerName": "Покрытие, мес.",
-            "field": "stock_cover_months",
-            "width": 125,
-            "valueFormatter": {"function": "TwoDecimal(params.value)"},
-            "cellStyle": {"textAlign": "center"},
-            "headerClass": "ag-center-header",
-        },
-        {
-            "headerName": "С заказами, мес.",
-            "field": "stock_cover_months_total",
-            "width": 135,
-            "valueFormatter": {"function": "TwoDecimal(params.value)"},
-            "cellStyle": {"textAlign": "center"},
-            "headerClass": "ag-center-header",
-        },
-        _qty_col("Δ доступно к ROP", "stock_vs_rop", width=135),
-        _qty_col("Нужно заказать", "order_need", width=125),
-        {
-            "headerName": "Статус",
-            "field": "stock_status",
-            "minWidth": 190,
-            "type": "leftAligned",
-            "headerClass": "ag-center-header",
-        },
+            *warehouses,
+        ]),
+        _group("Оборачиваемость", "turnover", [
+            _txt("Статус оборачиваемости", "turnover_status", 200, cellStyle=_TURNOVER_STATUS_STYLE),
+            _num("Оборач., дн.", "turnover_days", "IntOrDash", 105,
+                 tooltip="Доступный остаток / среднедневные продажи"),
+            _num("Реализация партии", "sell_through", "PctOrDash", 130, hidden=True,
+                 tooltip="Продано с последнего прихода / (продано с прихода + остаток)"),
+            _num("Оборотов в год", "turns_per_year", "TwoDecimal", 115, hidden=True),
+            _num("Продажи в день", "avg_daily_sales", "TwoDecimal", 115, hidden=True),
+            _txt("Посл. приход", "last_receipt_date", 110, hidden=True),
+            _num("Дней с прихода", "days_since_receipt", "IntOrDash", 115, hidden=True),
+            _num("Посл. партия, шт.", "last_receipt_qty", "IntOrDash", 125, hidden=True),
+            _num("Продано с прихода", "sold_since_receipt", "IntOrDash", 130, hidden=True),
+            _num("Пришло за период", "receipt_qty_period", "IntOrDash", 130, hidden=True),
+            _txt("Первый приход", "first_receipt_date", 115, hidden=True),
+            _num("Цена закупки", "purchase_price", "RUBOrDash", 115, hidden=True),
+            _num("Остаток по закупке", "stock_value_purchase", "RUBOrDash", 140, hidden=True),
+        ]),
     ]
-
-    # Складские колонки скрыты до раскрытия группы "+"
-    current_stock_children.extend(
-        _warehouse_columns(
-            df,
-            "stock_wh::",
-        )
-    )
-
-    current_stock_children.extend(
-        _warehouse_columns(
-            df,
-            "ordered_wh::",
-            suffix=" — заказ",
-        )
-    )
-
-    column_defs.append(
-        {
-            "headerName": "Текущие остатки",
-            "groupId": "current_stock",
-            "marryChildren": True,
-            "headerClass": "ag-center-header",
-            "openByDefault": False,
-            "children": current_stock_children,
-        }
-    )
-
-    return column_defs
 
 
 def get_matrix_grid_options() -> Dict[str, Any]:
@@ -411,8 +251,10 @@ def get_matrix_grid_options() -> Dict[str, Any]:
         "paginationPageSize": 25,
         "paginationPageSizeSelector": [25, 50, 100],
         "rowHeight": 34,
-        "headerHeight": 36,
-        "groupHeaderHeight": 34,
+        "headerHeight": 38,
+        "groupHeaderHeight": 32,
+        "tooltipShowDelay": 400,
+        "suppressDragLeaveHidesColumns": True,
         "suppressRowClickSelection": False,
         "rowClass": "clickable-row",
         "ensureDomOrder": True,

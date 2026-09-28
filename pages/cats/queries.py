@@ -565,7 +565,7 @@ def cats_report(start, end, option='cat', val='amount'):
                             label="Показать значения",
                             size="sm",
                             radius="lg",
-                            color="blue",
+                            color="teal",
                             disabled=False,
                             withThumbIndicator=True,
                         ),
@@ -645,6 +645,8 @@ def cats_report(start, end, option='cat', val='amount'):
         tab_list,
         value=parent_list[0] if parent_list else None,
         orientation="horizontal",
+        color="teal",
+        radius=0,
     )
 
     return dmc.Container(

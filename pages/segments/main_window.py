@@ -25,6 +25,17 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 from .empty_state import render_segments_empty_state
+from .sales_export import build_sales_excel_bytes, fetch_sales
+from datetime import datetime
+from pages.matrix.xl_brand import (
+    FMT_DATE,
+    FMT_MONEY,
+    FMT_QTY,
+    FMT_SHARE,
+    build_toc,
+    finalize,
+    style_table_sheet,
+)
 
 
 
@@ -337,18 +348,7 @@ def pareto_block(df: pd.DataFrame):
                 align="center",
                 children=[
                     dmc.Title("Парето по выручке (топ-30)", order=5),
-                    dmc.Group(gap="xs", children=[
-                        dmc.Button(
-                            "Excel",
-                            id="pareto-export-xlsx",
-                            leftSection=DashIconify(icon="mdi:file-excel", width=18),
-                            variant="light",
-                            color="green",
-                            radius="sm",
-                            size="sm",
-                        ),
-                        dcc.Download(id="pareto-download-xlsx"),
-                    ]),
+                    dmc.Text("Скачать — меню «Экспорт» вверху страницы", size="xs", c="dimmed"),
                 ],
             ),
             dmc.Space(h=6),
@@ -1604,6 +1604,9 @@ class SegmentMainWindow:
         self.assing_manu = "segments_assign_manu_action_button"
         self.assing_brend = "segments_assign_brend_action_button"
         self.ag_grid_id = {'type': 'segments_ag_grid', 'index': '1'}
+        self.export_selected_id = "segments_export_selected"
+        self.export_sales_id = "segments_export_sales"
+        self.sales_download_id = "segments_sales_download"
 
         self.mslider = MonthSlider(id=self.mslider_id)
         self.tree = dmc.Tree(
@@ -1969,6 +1972,42 @@ class SegmentMainWindow:
     
     
     
+    def export_menu(self):
+        def _item(label, id_, icon, note, disabled):
+            return dmc.MenuItem(
+                dmc.Stack(gap=0, children=[
+                    dmc.Text(label, size="sm", fw=500),
+                    dmc.Text(note, size="xs", c="dimmed"),
+                ]),
+                id=id_,
+                n_clicks=0,
+                disabled=disabled,
+                leftSection=DashIconify(icon=icon, width=18, color="#2F6656"),
+            )
+
+        return dmc.Menu(
+            position="bottom-end",
+            shadow="md",
+            width=340,
+            radius=0,
+            children=[
+                dmc.MenuTarget(dmc.Button(
+                    "Экспорт",
+                    color="teal",
+                    radius=0,
+                    leftSection=DashIconify(icon="tabler:download", width=18),
+                    rightSection=DashIconify(icon="tabler:chevron-down", width=16),
+                )),
+                dmc.MenuDropdown([
+                    dmc.MenuLabel("Excel"),
+                    _item("Выбранные позиции", self.export_selected_id, "mdi:file-excel-outline",
+                          "Парето, все SKU, производители — отметьте позиции в дереве", True),
+                    _item("Все продажи за период", self.export_sales_id, "tabler:table-export",
+                          "Построчно: дата, магазин, товар, дизайнер. Учитывает выбор и поиск", False),
+                ]),
+            ],
+        )
+
     def layout(self):
         # --- ЛЕВАЯ КОЛОНКА  ---
         sidebar = dmc.Card(
@@ -2033,9 +2072,14 @@ class SegmentMainWindow:
             fluid=True,
             children=[
                 # Заголовок + подзаголовок
-                dmc.Group(justify="space-between", align="center",
-                        children=[self.title, dmc.Badge("Сегментный анализ", variant="outline", color="blue")]),
-                dmc.Text("Данный раздел предоставляет аналитику по номенклатурам продукции", size="xs", c="dimmed"),
+                dmc.Group(justify="space-between", align="center", children=[
+                    dmc.Stack(gap=2, children=[
+                        dmc.Title("Сегментный анализ", order=2),
+                        dmc.Text("Аналитика по выбранным номенклатурам, брендам и производителям",
+                                 size="sm", c="dimmed"),
+                    ]),
+                    self.export_menu(),
+                ]),
                 dmc.Space(h=10),
 
                 # --- Ряд "Период" (бейдж справа) ---
@@ -2064,6 +2108,8 @@ class SegmentMainWindow:
 
                 # служебные блоки
                 dcc.Store(id="dummy_imputs_for_segment_slider"),
+                dcc.Download(id="pareto-download-xlsx"),
+                dcc.Download(id=self.sales_download_id),
                 dcc.Store(id="dummy_imputs_for_segment_render"),
                 self.df_store,
                 CATS_MANAGEMENT.make_drawler(),
@@ -2152,6 +2198,7 @@ class SegmentMainWindow:
             Output(self.assing_cat, 'disabled'),
             Output(self.assing_brend, 'disabled'),
             Output(self.assing_manu, 'disabled'),
+            Output(self.export_selected_id, 'disabled'),
             Input(self.tree_id, "checked"),
             # Input(self.kpi_compact_switch_id, "checked"),
             State("theme_switch", "checked"),
@@ -2160,7 +2207,7 @@ class SegmentMainWindow:
         )
         def get_data(checked, theme, store_data):
             if not checked:
-                return render_segments_empty_state(), True, True, True
+                return render_segments_empty_state(), True, True, True, True
                 
 
             rrgrid_className = "ag-theme-alpine-dark" if theme else "ag-theme-alpine"
@@ -2188,7 +2235,38 @@ class SegmentMainWindow:
                 gap="md",
             )
 
-            return details, False, False, False
+            return details, False, False, False, False
+
+        @app.callback(
+            Output(self.sales_download_id, "data"),
+            Input(self.export_sales_id, "n_clicks"),
+            State(self.tree_id, "checked"),
+            State(self.search_input_id, "value"),
+            State(self.df_store_id, "data"),
+            prevent_initial_call=True,
+        )
+        def export_sales(n, checked, search, store_data):
+            if not n or not store_data:
+                return no_update
+            ids = []
+            for i in checked or []:
+                try:
+                    ids.append(int(float(i)))
+                except (TypeError, ValueError):
+                    continue
+            if ids:
+                scope = f"выбрано позиций: {len(ids)}"
+                df = fetch_sales(store_data["start"], store_data["end"], item_ids=ids)
+            elif search:
+                scope = f"поиск: «{search}»"
+                df = fetch_sales(store_data["start"], store_data["end"], search=search)
+            else:
+                scope = "все позиции"
+                df = fetch_sales(store_data["start"], store_data["end"])
+            content = build_sales_excel_bytes(df, store_data["start"], store_data["end"], scope)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
+            return dcc.send_bytes(lambda b: b.write(content),
+                                  f"sales_{store_data['start']}_{store_data['end']}_{stamp}.xlsx")
 
         #Вызываем управление категорями
         @app.callback(
@@ -2436,7 +2514,7 @@ class SegmentMainWindow:
         
         @app.callback(
             Output("pareto-download-xlsx", "data"),
-            Input("pareto-export-xlsx", "n_clicks"),
+            Input(self.export_selected_id, "n_clicks"),
             State(self.tree_id, "checked"),
             State(self.df_store_id, "data"),
             prevent_initial_call=True,
@@ -2769,114 +2847,84 @@ class SegmentMainWindow:
                     if col_name in ["Производитель", "Бренд"]:
                         ws3.column_dimensions[get_column_letter(i)].width = 30
 
-            # ---------- Отдаём файл ----------
+            _brand_workbook(wb, store_data, len(g))
+
             bio = BytesIO()
             wb.save(bio)
             bio.seek(0)
 
-            filename = f"Парето_{store_data['start']}_{store_data['end']}.xlsx"
+            filename = f"segments_{store_data['start']}_{store_data['end']}.xlsx"
             return dcc.send_bytes(bio.getvalue(), filename)
 
 
         def _apply_style_to_worksheet(ws):
-            """Применяет общие стили к листу"""
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-            from openpyxl.formatting.rule import ColorScaleRule
-            from openpyxl.utils import get_column_letter
-            
-            header_fill = PatternFill("solid", fgColor="1F4E79")
-            header_font = Font(color="FFFFFF", bold=True)
-            header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            thin = Side(style="thin", color="D9D9D9")
-            border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-            # Шапка
-            for cell in ws[1]:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = header_align
-                cell.border = border
-
-            # Отключаем линии сетки
-            ws.sheet_view.showGridLines = False
-            
-            # Заморозка: строка 1 + первые 3 колонки (A, B, C)
-            ws.freeze_panes = "D2"
-            
-            if ws.max_row > 1:
-                ws.auto_filter.ref = ws.dimensions
-
-            # Карточный вид
-            for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-                for cell in row:
-                    cell.border = border
-                    if cell.column == 1:
-                        cell.alignment = Alignment(horizontal="center", vertical="center")
-                    else:
-                        if isinstance(cell.value, (int, float)) or hasattr(cell.value, "year"):
-                            cell.alignment = Alignment(horizontal="right", vertical="center")
-                        else:
-                            cell.alignment = Alignment(horizontal="left", vertical="center")
-
-            # Форматы чисел
+            """Числовые форматы и ширины (шапка в строке 1); оформление — в _brand_workbook."""
             col_idx = {cell.value: i + 1 for i, cell in enumerate(ws[1])}
 
-            def col_letter(name):
-                return get_column_letter(col_idx.get(name, 1))
+            def fmt(names, number_format):
+                for name in names:
+                    if name in col_idx:
+                        for row in ws.iter_rows(min_row=2, min_col=col_idx[name], max_col=col_idx[name]):
+                            row[0].number_format = number_format
 
-            for name in ("Выручка, ₽", "Средняя цена, ₽", "Ср. выручка на SKU, ₽"):
-                if name in col_idx:
-                    for cell in ws[col_letter(name)][1:]:
-                        cell.number_format = '#,##0'
+            fmt(("Выручка, ₽", "Средняя цена, ₽", "Ср. выручка на SKU, ₽"), FMT_MONEY)
+            fmt(("Кол-во, шт", "Кол-во SKU"), FMT_QTY)
+            fmt(("Доля выручки, %", "Накопленная доля, %"), FMT_SHARE)
+            fmt(("Последняя продажа",), FMT_DATE)
 
-            if "Кол-во, шт" in col_idx:
-                for cell in ws[col_letter("Кол-во, шт")][1:]:
-                    cell.number_format = '#,##0'
-
-            if "Кол-во SKU" in col_idx:
-                for cell in ws[col_letter("Кол-во SKU")][1:]:
-                    cell.number_format = '#,##0'
-
-            for name in ("Доля выручки, %", "Накопленная доля, %"):
-                if name in col_idx:
-                    for cell in ws[col_letter(name)][1:]:
-                        cell.number_format = '0.00%'
-
-            if "Последняя продажа" in col_idx:
-                for cell in ws[col_letter("Последняя продажа")][1:]:
-                    cell.number_format = 'dd.mm.yyyy'
-
-            # Зебра
-            zebra_fill = PatternFill("solid", fgColor="F6F8FA")
-            for r in range(2, ws.max_row + 1):
-                if r % 2 == 0:
-                    for c in range(1, ws.max_column + 1):
-                        ws.cell(row=r, column=c).fill = zebra_fill
-
-            # Градиент по выручке
-            if "Выручка, ₽" in col_idx:
-                L = col_letter("Выручка, ₽")
-                ws.conditional_formatting.add(
-                    f"{L}2:{L}{ws.max_row}",
-                    ColorScaleRule(
-                        start_type="min", start_color="E8F5E9",
-                        mid_type="percentile", mid_value=50, mid_color="C8E6C9",
-                        end_type="max", end_color="81C784",
-                    )
-                )
-
-            # Автоширина
             for col in range(1, ws.max_column + 1):
-                max_len = 0
                 letter = get_column_letter(col)
-                for cell in ws[letter]:
-                    val = "" if cell.value is None else str(cell.value)
-                    max_len = max(max_len, len(val))
+                max_len = max((len(str(c.value)) for c in ws[letter] if c.value is not None), default=8)
                 ws.column_dimensions[letter].width = min(max_len + 2, 50)
 
-            ws.row_dimensions[1].height = 22
-        
-        
+        def _brand_workbook(wb, store_data, n_items):
+            start = pd.to_datetime(store_data["start"])
+            end = pd.to_datetime(store_data["end"])
+            params = f"Рубли и штуки · период {start:%d.%m.%Y} — {end:%d.%m.%Y} · выбрано позиций: {n_items}"
+            descriptions = {
+                "Парето (Топ-30)": "30 позиций с наибольшей выручкой и их накопленная доля",
+                "Все SKU по штрих-кодам": "Все выбранные позиции в разрезе штрихкодов",
+                "Все SKU": "Все выбранные позиции",
+                "По производителям": "Выручка, количество и число SKU по производителям",
+            }
+            titles = {
+                "Парето (Топ-30)": "Парето: топ-30 позиций по выручке",
+                "Все SKU по штрих-кодам": "Все позиции по штрихкодам",
+                "Все SKU": "Все выбранные позиции",
+                "По производителям": "Выручка по производителям",
+            }
+            sheets = [ws.title for ws in wb.worksheets]
+            for ws in wb.worksheets:
+                if ws.max_row < 1:
+                    continue
+                header = [str(c.value or "") for c in ws[1]]
+                freeze_col = header.index("Номенклатура") + 2 if "Номенклатура" in header else 3
+                style_table_sheet(ws, title=titles.get(ws.title, ws.title), subtitle=params,
+                                  header_row=1, freeze_col=freeze_col, key_headers=["Выручка, ₽"])
+            total = 0.0
+            qty = 0.0
+            if "Парето (Топ-30)" in wb.sheetnames or sheets:
+                ws0 = wb[sheets[1] if len(sheets) > 1 else sheets[0]]
+                hdr = {c.value: c.column for c in ws0[4]}
+                for r in range(5, ws0.max_row + 1):
+                    if "Выручка, ₽" in hdr:
+                        total += float(ws0.cell(r, hdr["Выручка, ₽"]).value or 0)
+                    if "Кол-во, шт" in hdr:
+                        qty += float(ws0.cell(r, hdr["Кол-во, шт"]).value or 0)
+            build_toc(
+                wb,
+                title="Сегментный анализ",
+                subtitle="Парето, позиции и производители по выбранной выборке",
+                params=params,
+                cards=[
+                    ("ВЫРУЧКА ВЫБОРКИ, ₽", total, FMT_MONEY, "за период"),
+                    ("ПРОДАНО, ШТ.", qty, FMT_QTY, "за период"),
+                    ("ПОЗИЦИЙ", n_items, FMT_QTY, "выбрано в дереве"),
+                ],
+                sheets=[(n, descriptions.get(n, "")) for n in sheets],
+            )
+            finalize(wb, ["Оглавление"] + sheets)
+
         CATS_MANAGEMENT.register_callbacks(app)
         AG_MODAL.register_callbacks(app)
         
