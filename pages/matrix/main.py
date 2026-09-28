@@ -27,6 +27,7 @@ from .empty_state import render_matrix_empty_state
 from .export_excel import build_matrix_excel_bytes
 from .stock_export import build_stock_excel_bytes
 from .charts import build_stock_sunburst, stock_category_summary
+from .turnover import fetch_item_receipts
 from .turnover import ABC_ORDER, STATUS_ORDER as TURNOVER_STATUS_ORDER, add_turnover_metrics
 from .turnover_ui import (
     TURNOVER_CONTENT_ID,
@@ -39,6 +40,9 @@ from .turnover_ui import (
     HEATMAP_NOTE_ID,
     ITEMS_GRID_ID,
     ITEMS_TITLE_ID,
+    RECEIPTS_DRAWER_ID,
+    RECEIPTS_DRAWER_BODY_ID,
+    render_receipts_panel,
     abc_heatmap,
     cell_note,
     items_rows,
@@ -58,6 +62,8 @@ locale.setlocale(locale.LC_TIME, "ru_RU.UTF-8")
 MATRIX_GRID_ID = {"type": "mx-grid", "index": "matrix"}
 SUNBURST_ID = {"type": "mx-graph", "index": "sunburst"}
 THEME_MIRROR_ID = "matrix-theme-mirror"
+SEARCH_ID = "matrix-search"
+FILTERS_RESET_ID = "matrix-filters-reset"
 CONTEXT_STORE_ID = "matrix-context-store"
 
 _MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"]
@@ -77,7 +83,25 @@ def scope_text(ctx_data) -> str:
     return f"Группы: {groups} · категории: {cats}"
 
 
-def apply_matrix_filters(df, manu_values=None, stock_values=None, turnover_values=None, abc_values=None):
+def search_items(df, query):
+    """Поиск по номенклатуре: все слова запроса, без учёта регистра; число — ещё и по item_id."""
+    words = str(query or "").casefold().split()
+    if not words or df.empty:
+        return df
+    cols = [c for c in ("fullname", "name") if c in df.columns]
+    text = df[cols].fillna("").astype(str).agg(" ".join, axis=1).str.casefold() if cols else pd.Series("", index=df.index)
+    mask = pd.Series(True, index=df.index)
+    for w in words:
+        mask &= text.str.contains(w, regex=False)
+    q = str(query).strip()
+    if q.isdigit() and "item_id" in df.columns:
+        mask |= df["item_id"].astype(str) == q
+    return df[mask]
+
+
+def apply_matrix_filters(df, manu_values=None, stock_values=None, turnover_values=None, abc_values=None,
+                         search=None):
+    df = search_items(df, search)
     if abc_values and "abc" in df.columns:
         df = df[df["abc"].fillna("").astype(str).isin(abc_values)]
     if manu_values and "manu" in df.columns:
@@ -1000,6 +1024,24 @@ class RightSection:
                             _ms(self.ids.stock_status_ms, "Статус запаса", "Все статусы", "tabler:packages"),
                             _ms(TURNOVER_STATUS_MS_ID, "Оборачиваемость", "Все статусы", "tabler:refresh"),
                             _ms(ABC_MS_ID, "ABC", "Все классы", "tabler:chart-bar", 200),
+                            dmc.TextInput(
+                                id=SEARCH_ID,
+                                label="Номенклатура",
+                                placeholder="Поиск по названию или item_id",
+                                leftSection=DashIconify(icon="tabler:search", width=16),
+                                debounce=400,
+                                radius=0,
+                                w=280,
+                            ),
+                            dmc.Button(
+                                "Сбросить",
+                                id=FILTERS_RESET_ID,
+                                variant="subtle",
+                                color="gray",
+                                radius=0,
+                                n_clicks=0,
+                                leftSection=DashIconify(icon="tabler:filter-off", width=16),
+                            ),
                         ],
                     ),
                     dmc.Badge(
@@ -1315,15 +1357,16 @@ class MainWindow:
             Input(ABC_MS_ID, "value"),
             Input("matrix-stock-metric", "value"),
             Input(THEME_MIRROR_ID, "data"),
+            Input(SEARCH_ID, "value"),
             State(self.rs.ids.store, "data"),
         )
         def filter_matrix(manu_values, stock_status_values, turnover_values, abc_values, stock_metric, theme,
-                          store_json):
+                          search, store_json):
             if not store_json:
                 return (no_update,) * 11
 
             df_all = pd.read_json(StringIO(store_json), orient="records")
-            df_base = apply_matrix_filters(df_all, manu_values, stock_status_values)
+            df_base = apply_matrix_filters(df_all, manu_values, stock_status_values, search=search)
             df_bar = apply_matrix_filters(df_base, abc_values=abc_values)
             df = apply_matrix_filters(df_bar, turnover_values=turnover_values)
             metric = stock_metric or "stock_available"
@@ -1371,6 +1414,24 @@ class MainWindow:
                 return no_update
             return [] if list(cur_status or []) == [status] else [status]
 
+        # Один колбэк на открытие и закрытие: при закрытии выбор сбрасывается,
+        # поэтому повторный клик по той же строке снова открывает шторку.
+        @app.callback(
+            Output(RECEIPTS_DRAWER_ID, "opened"),
+            Output(RECEIPTS_DRAWER_BODY_ID, "children"),
+            Output(ITEMS_GRID_ID, "selectedRows"),
+            Input(ITEMS_GRID_ID, "selectedRows"),
+            Input(RECEIPTS_DRAWER_ID, "opened"),
+            prevent_initial_call=True,
+        )
+        def open_receipts_drawer(rows, opened):
+            if ctx.triggered_id == RECEIPTS_DRAWER_ID:
+                return no_update, no_update, (no_update if opened else [])
+            if not rows or rows[0].get("item_id") is None:
+                return no_update, no_update, no_update
+            row = rows[0]
+            return True, render_receipts_panel(row, fetch_item_receipts(int(row["item_id"]))), no_update
+
         @app.callback(
             Output(ITEMS_GRID_ID, "rowData"),
             Output(ITEMS_TITLE_ID, "children"),
@@ -1385,15 +1446,16 @@ class MainWindow:
             State(TURNOVER_STATUS_MS_ID, "value"),
             State(ABC_MS_ID, "value"),
             State(THEME_MIRROR_ID, "data"),
+            State(SEARCH_ID, "value"),
             prevent_initial_call=True,
         )
         def heatmap_cell_click(cell_click, reset, store_json, manu_values, stock_values,
-                               turnover_values, abc_values, theme):
+                               turnover_values, abc_values, theme, search):
             """Клик по ячейке фильтрует только таблицу позиций под картой."""
             if not store_json:
                 return (no_update,) * 5
             df_all = pd.read_json(StringIO(store_json), orient="records")
-            df_bar = apply_matrix_filters(df_all, manu_values, stock_values, abc_values=abc_values)
+            df_bar = apply_matrix_filters(df_all, manu_values, stock_values, abc_values=abc_values, search=search)
             df = apply_matrix_filters(df_bar, turnover_values=turnover_values)
 
             cell = None
@@ -1466,6 +1528,20 @@ class MainWindow:
         def mirror_theme(theme):
             return bool(theme)
 
+        @app.callback(
+            Output(self.rs.ids.manu_ms, "value", allow_duplicate=True),
+            Output(self.rs.ids.stock_status_ms, "value", allow_duplicate=True),
+            Output(TURNOVER_STATUS_MS_ID, "value", allow_duplicate=True),
+            Output(ABC_MS_ID, "value", allow_duplicate=True),
+            Output(SEARCH_ID, "value", allow_duplicate=True),
+            Input(FILTERS_RESET_ID, "n_clicks"),
+            prevent_initial_call=True,
+        )
+        def reset_filters(n):
+            if not n:
+                return (no_update,) * 5
+            return [], [], [], [], ""
+
         filter_states = [
             State(CONTEXT_STORE_ID, "data"),
             State(self.rs.ids.store, "data"),
@@ -1474,11 +1550,12 @@ class MainWindow:
             State(TURNOVER_STATUS_MS_ID, "value"),
             State(ABC_MS_ID, "value"),
             State(self.mslider_id, "value"),
+            State(SEARCH_ID, "value"),
         ]
 
-        def _filtered(store_json, manu_values, stock_values, turnover_values, abc_values=None):
+        def _filtered(store_json, manu_values, stock_values, turnover_values, abc_values=None, search=None):
             df = pd.read_json(StringIO(store_json), orient="records")
-            return apply_matrix_filters(df, manu_values, stock_values, turnover_values, abc_values)
+            return apply_matrix_filters(df, manu_values, stock_values, turnover_values, abc_values, search)
 
         @app.callback(
             Output(self.rs.ids.download, "data"),
@@ -1486,11 +1563,11 @@ class MainWindow:
             *filter_states,
             prevent_initial_call=True,
         )
-        def download_excel(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms):
+        def download_excel(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms, search=None):
             if not n or not store_json:
                 return no_update
 
-            df_matrix = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values)
+            df_matrix = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values, search)
             start, end = id_to_months(ms[0], ms[1])
             xlsx_bytes = build_matrix_excel_bytes(
                 ENGINE, df_matrix=df_matrix, start=start, end=end, scope=scope_text(ctx_data),
@@ -1505,11 +1582,11 @@ class MainWindow:
             *filter_states,
             prevent_initial_call=True,
         )
-        def download_turnover_excel(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms):
+        def download_turnover_excel(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms, search=None):
             if not n or not store_json:
                 return no_update
 
-            df = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values)
+            df = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values, search)
             start, end = id_to_months(ms[0], ms[1])
             xlsx_bytes = build_turnover_excel_bytes(
                 df, period_label=f"{start} – {end}", scope=scope_text(ctx_data),
@@ -1600,11 +1677,11 @@ class MainWindow:
             *filter_states,
             prevent_initial_call=True,
         )
-        def download_csv(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms):
+        def download_csv(n, ctx_data, store_json, manu_values, stock_values, turnover_values, abc_values, ms, search=None):
             if not n or not store_json:
                 return no_update
 
-            df = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values)
+            df = _filtered(store_json, manu_values, stock_values, turnover_values, abc_values, search)
 
             # пользовательские названия для CSV
             csv_rename = {
@@ -1701,13 +1778,17 @@ class MainWindow:
         @app.callback(
             Output(self.rs.ids.barcode_drawer, "opened"),
             Output(self.rs.ids.barcode_drawer_body, "children"),
+            Output(MATRIX_GRID_ID, "selectedRows"),
             Input(MATRIX_GRID_ID, "selectedRows"),
+            Input(self.rs.ids.barcode_drawer, "opened"),
             State(self.mslider_id, "value"),
             prevent_initial_call=True,
         )
-        def open_barcode_details(selected_rows, ms):
+        def open_barcode_details(selected_rows, opened, ms):
+            if ctx.triggered_id == self.rs.ids.barcode_drawer:
+                return no_update, no_update, (no_update if opened else [])
             if not selected_rows:
-                return False, no_update
+                return no_update, no_update, no_update
 
             row = selected_rows[0]
             item_id = int(row["item_id"])
@@ -1721,7 +1802,10 @@ class MainWindow:
                         title_name=fullname,
                         subtitle=f"item_id = {item_id}",
                     )
+            panel = dmc.Stack(gap="md", children=[
+                panel,
+                dmc.Divider(label="Оборачиваемость и приходы", labelPosition="left"),
+                render_receipts_panel(row, fetch_item_receipts(item_id), show_title=False),
+            ])
 
-            # panel = render_barcode_panel(df_bc, title=f"{fullname} (item_id={item_id})")
-
-            return True, panel
+            return True, panel, no_update

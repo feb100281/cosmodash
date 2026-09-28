@@ -199,14 +199,10 @@ def render_barcode_panel(df: pd.DataFrame, title_name: str, subtitle: str):
             ),
             meta,
             dmc.Divider(),
-            dmc.ScrollArea(
-                h=380,
-                offsetScrollbars=True,
-                children=dmc.Box(
-                    table,
-                    # ключ: контейнер не растягивает таблицу
-                    style={"display": "inline-block", "width": "max-content"},
-                ),
+            # Высота по содержимому, прокрутка только при длинном списке
+            dmc.Box(
+                dmc.Box(table, style={"display": "inline-block", "width": "max-content"}),
+                style={"maxHeight": 380, "overflowY": "auto"},
             ),
         ],
         gap="md",

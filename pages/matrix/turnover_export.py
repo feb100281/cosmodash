@@ -18,6 +18,7 @@ from .turnover import (
     STATUS_VERY_SLOW,
     build_turnover_insights,
     turnover_by_category,
+    turnover_by_warehouse,
     turnover_by_status,
     turnover_kpis,
 )
@@ -203,6 +204,7 @@ def build_turnover_excel_bytes(df: pd.DataFrame, period_label: str = "", scope: 
         ("Выводы", "Выводы и рекомендации по оборачиваемости"),
         ("По статусам", "Распределение запаса по скорости оборачиваемости"),
         ("По категориям", "Оборачиваемость и «замороженный» запас по категориям"),
+        ("По складам", "Где лежит запас: остаток, неликвид и медленный товар по складам"),
         ("ABC × оборачиваемость", "Доступный остаток по классам ABC и скорости оборачиваемости"),
         ("Неликвид", "Позиции без продаж и с оборачиваемостью больше года — к разбору"),
         ("Оборачиваемость SKU", "Все позиции матрицы: остаток, продажи, приходы, оборачиваемость"),
@@ -317,7 +319,7 @@ def build_turnover_excel_bytes(df: pd.DataFrame, period_label: str = "", scope: 
 
     r = end + 2
     notes = [
-        "Оборачиваемость, дн. = доступный остаток / среднедневные продажи за выбранный период.",
+        "Оборачиваемость, дн. = доступный остаток / среднедневные продажи. Для товаров, появившихся внутри периода, дни считаются с первой продажи или прихода (не меньше 30).",
         "Реализация партии = продано с последнего прихода / (продано с прихода + текущий остаток).",
         "Неликвид — есть остаток, но ни одной продажи за период и последний приход старше 60 дней.",
     ]
@@ -343,21 +345,41 @@ def build_turnover_excel_bytes(df: pd.DataFrame, period_label: str = "", scope: 
     _setup(ws)
     cat = turnover_by_category(df) if k.get("has_data") else pd.DataFrame()
     cols = [("Категория", None, "left"), ("SKU с остатком", FMT_QTY, "right"), ("Остаток, шт.", FMT_QTY, "right"),
+            ("Продано за период, шт.", FMT_QTY, "right"),
             ("Продажи в день, шт.", FMT_DEC, "right"), ("Оборачиваемость, дн.", FMT_QTY, "right"),
             ("Неликвид, шт.", FMT_QTY, "right"), ("Заморожено, %", FMT_PCT, "right"),
             ("Остаток по закупке, ₽", FMT_MONEY, "right")]
     r = _sheet_header(ws, len(cols), "ОБОРАЧИВАЕМОСТЬ ПО КАТЕГОРИЯМ",
                       "Заморожено = неликвид + позиции с оборачиваемостью больше года", params)
-    rows = [[x.cat_name, x.sku, x.stock, x.daily, _n(x.turnover_days), x.dead, x.frozen_share * 100, _n(x.value)]
+    rows = [[x.cat_name, x.sku, x.stock, x.sold, x.daily, _n(x.turnover_days), x.dead, x.frozen_share * 100, _n(x.value)]
             for x in cat.itertuples()] if not cat.empty else []
     if not cat.empty:
         tot_stock, tot_daily = cat["stock"].sum(), cat["daily"].sum()
-        total = ["ИТОГО", cat["sku"].sum(), tot_stock, tot_daily,
+        total = ["ИТОГО", cat["sku"].sum(), tot_stock, cat["sold"].sum(), tot_daily,
                  (tot_stock / tot_daily) if tot_daily else None, cat["dead"].sum(),
                  (cat["frozen"].sum() / tot_stock * 100) if tot_stock else None, _n(cat["value"].sum(min_count=1))]
     else:
         total = None
-    _table(ws, r, cols, rows, total=total, widths=[34, 14, 14, 16, 16, 14, 14, 20], autofilter=True)
+    _table(ws, r, cols, rows, total=total, widths=[34, 14, 14, 16, 16, 16, 14, 14, 20], autofilter=True)
+
+    # -------------------------------------------------------- По складам
+    ws = wb.create_sheet("По складам")
+    _setup(ws)
+    wh = turnover_by_warehouse(df) if k.get("has_data") else pd.DataFrame()
+    cols = [("Склад", None, "left"), ("SKU", FMT_QTY, "right"), ("Остаток, шт.", FMT_QTY, "right"),
+            ("Доля запаса, %", FMT_PCT, "right"), ("Неликвид, шт.", FMT_QTY, "right"),
+            ("Очень медленные, шт.", FMT_QTY, "right"), ("Заморожено, %", FMT_PCT, "right")]
+    r = _sheet_header(ws, len(cols), "ЗАПАС ПО СКЛАДАМ",
+                      "Статус оборачиваемости — по товару в целом; высокая доля в салонах часто означает выставочные образцы",
+                      params)
+    rows = [[x.warehouse, x.sku, x.stock, x.share * 100, x.dead, x.very_slow, x.frozen_share * 100]
+            for x in wh.itertuples()] if not wh.empty else []
+    total = None
+    if not wh.empty:
+        t_stock = wh["stock"].sum()
+        total = ["ИТОГО", None, t_stock, 100.0, wh["dead"].sum(), wh["very_slow"].sum(),
+                 (wh["frozen"].sum() / t_stock * 100) if t_stock else None]
+    _table(ws, r, cols, rows, total=total, widths=[36, 10, 14, 14, 14, 18, 14], autofilter=True)
 
     # ------------------------------------------------ ABC × оборачиваемость
     ws = wb.create_sheet("ABC × оборачиваемость")
@@ -390,6 +412,7 @@ def build_turnover_excel_bytes(df: pd.DataFrame, period_label: str = "", scope: 
         ("quant", "Продано за период, шт.", FMT_QTY, "right", 14),
         ("avg_daily_sales", "Продажи в день", FMT_DEC, "right", 12),
         ("turnover_days", "Оборачиваемость, дн.", FMT_QTY, "right", 14),
+        ("active_days", "Дней в продаже", FMT_QTY, "right", 12),
         ("turns_per_year", "Оборотов в год", FMT_DEC, "right", 12),
         ("first_receipt_date", "Первый приход", FMT_DATE, "center", 12),
         ("last_receipt_date", "Последний приход", FMT_DATE, "center", 12),

@@ -3,6 +3,7 @@
 Оборачиваемость SKU: продажи периода, текущие остатки, приходы (stock_receipts).
 
 turnover_days  = доступный остаток / среднедневные продажи
+                 (дни считаются с появления товара, если он появился внутри периода)
 sell_through   = продано с последнего прихода / (продано с прихода + остаток)
 stock_value_purchase — по цене последнего прихода, если цена есть.
 """
@@ -16,12 +17,13 @@ import pandas as pd
 from .data import ENGINE
 
 
-FAST_DAYS = 60
-NORMAL_DAYS = 120
+FAST_DAYS = 90
+NORMAL_DAYS = 180
 SLOW_DAYS = 365
 NEW_RECEIPT_DAYS = 60
 STALE_RECEIPT_DAYS = 90
 LOW_SELL_THROUGH = 0.30
+MIN_ACTIVE_DAYS = 30
 
 STATUS_NO_STOCK = "Нет остатка"
 STATUS_FAST = f"Быстрая (≤{FAST_DAYS} дн.)"
@@ -53,6 +55,8 @@ STATUS_COLORS = {
 
 TURNOVER_COLUMNS = [
     "avg_daily_sales",
+    "first_seen_date",
+    "active_days",
     "turnover_days",
     "turns_per_year",
     "first_receipt_date",
@@ -142,6 +146,24 @@ def fetch_receipts_summary(period_start: str, period_end: str) -> pd.DataFrame:
     return df
 
 
+def fetch_first_seen() -> pd.DataFrame:
+    """Дата появления товара: первая продажа за всю историю."""
+    q = """
+    SELECT item_id, MIN(date) AS first_sale_date
+    FROM sales_salesdata
+    WHERE item_id IS NOT NULL AND quant_dt > 0
+    GROUP BY item_id
+    """
+    try:
+        df = pd.read_sql(q, ENGINE)
+    except Exception as exc:
+        print(f"[turnover] first sale: {exc}")
+        return pd.DataFrame(columns=["item_id", "first_sale_date"])
+    df["item_id"] = pd.to_numeric(df["item_id"], errors="coerce").astype("Int64")
+    df["first_sale_date"] = pd.to_datetime(df["first_sale_date"], errors="coerce")
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Метрики
 # ---------------------------------------------------------------------------
@@ -182,8 +204,21 @@ def add_turnover_metrics(df: pd.DataFrame, start: str, end: str) -> pd.DataFrame
     stock = pd.to_numeric(out.get("stock_available", 0), errors="coerce").fillna(0.0)
     sold = pd.to_numeric(out.get("quant", 0), errors="coerce").fillna(0.0).clip(lower=0)
 
+    # Товар, появившийся внутри периода, считаем с даты появления
+    # (первая продажа или первый приход, что раньше), но не меньше MIN_ACTIVE_DAYS.
+    first_sale = fetch_first_seen()
+    first_sale_map = first_sale.dropna(subset=["item_id"]).set_index("item_id")["first_sale_date"]
+    first_sale_col = pd.to_datetime(out["item_id"].map(first_sale_map), errors="coerce")
+    first_seen = pd.concat(
+        [first_sale_col, pd.to_datetime(out["first_receipt_date"], errors="coerce")], axis=1
+    ).min(axis=1)
+    start_eff = first_seen.where(first_seen > p_start, p_start).fillna(p_start)
+    active = ((p_end - start_eff).dt.days + 1).clip(lower=MIN_ACTIVE_DAYS, upper=period_days)
+    out["first_seen_date"] = first_seen.dt.strftime("%d.%m.%Y")
+    out["active_days"] = active.astype(int)
+
     out["period_days"] = period_days
-    out["avg_daily_sales"] = sold / period_days
+    out["avg_daily_sales"] = sold / out["active_days"]
 
     with np.errstate(divide="ignore", invalid="ignore"):
         turnover = np.where(
@@ -316,6 +351,43 @@ def turnover_by_status(df: pd.DataFrame) -> pd.DataFrame:
     return g.sort_values("order").drop(columns="order")
 
 
+WH_PREFIX = "stock_wh::"
+
+
+def turnover_by_warehouse(df: pd.DataFrame) -> pd.DataFrame:
+    """Остаток по складам и доля «замороженного» запаса на каждом складе.
+
+    Статус оборачиваемости берётся по товару в целом (продажи по складам не разделяются).
+    """
+    cols = [c for c in df.columns if str(c).startswith(WH_PREFIX)]
+    if not cols or df.empty:
+        return pd.DataFrame()
+    status = df["turnover_status"].fillna("")
+    dead = status == STATUS_DEAD
+    very_slow = status == STATUS_VERY_SLOW
+    rows = []
+    for c in cols:
+        q = pd.to_numeric(df[c], errors="coerce").fillna(0).clip(lower=0)
+        units = float(q.sum())
+        if units <= 0:
+            continue
+        rows.append({
+            "warehouse": c[len(WH_PREFIX):],
+            "sku": int((q > 0).sum()),
+            "stock": units,
+            "dead": float(q[dead].sum()),
+            "very_slow": float(q[very_slow].sum()),
+        })
+    if not rows:
+        return pd.DataFrame()
+    g = pd.DataFrame(rows)
+    total = g["stock"].sum()
+    g["share"] = g["stock"] / total if total else 0.0
+    g["frozen"] = g["dead"] + g["very_slow"]
+    g["frozen_share"] = np.where(g["stock"] > 0, g["frozen"] / g["stock"], 0.0)
+    return g.sort_values("stock", ascending=False).reset_index(drop=True)
+
+
 def turnover_by_category(df: pd.DataFrame) -> pd.DataFrame:
     stock = _num(df, "stock_available").fillna(0)
     daily = _num(df, "avg_daily_sales").fillna(0)
@@ -325,12 +397,13 @@ def turnover_by_category(df: pd.DataFrame) -> pd.DataFrame:
         "sku": (stock > 0).astype(int),
         "stock": stock,
         "daily": np.where(stock > 0, daily, 0.0),
+        "sold": _num(df, "quant").fillna(0).clip(lower=0),
         "dead": np.where(status == STATUS_DEAD, stock, 0.0),
         "frozen": np.where(status.isin([STATUS_DEAD, STATUS_VERY_SLOW]), stock, 0.0),
         "value": _num(df, "stock_value_purchase"),
     })
     g = work.groupby("cat_name", as_index=False).agg(
-        sku=("sku", "sum"), stock=("stock", "sum"), daily=("daily", "sum"),
+        sku=("sku", "sum"), stock=("stock", "sum"), daily=("daily", "sum"), sold=("sold", "sum"),
         dead=("dead", "sum"), frozen=("frozen", "sum"),
         value=("value", lambda s: s.sum(min_count=1)),
     )
@@ -490,3 +563,20 @@ def abc_turnover_findings(df: pd.DataFrame) -> list[tuple[str, str]]:
             f"Товары A/B без доступного остатка: {int(a_dead.sum())} SKU — прямые потери выручки, "
             f"в приоритет закупки."))
     return out
+
+
+
+def fetch_item_receipts(item_id: int) -> pd.DataFrame:
+    """Все приходы товара (строки документов), новые сверху."""
+    q = """
+        SELECT receipt_date, receipt_number, warehouse, barcode, characteristic,
+               qty, price_purchase, amount_purchase
+        FROM djangodb.stock_receipts
+        WHERE item_id = %(item_id)s
+        ORDER BY receipt_date DESC, receipt_number
+    """
+    try:
+        return pd.read_sql(q, ENGINE, params={"item_id": int(item_id)})
+    except Exception as exc:
+        print(f"[turnover] приходы недоступны: {exc}")
+        return pd.DataFrame()

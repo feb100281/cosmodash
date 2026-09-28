@@ -17,6 +17,7 @@ from .turnover import (
     STATUS_VERY_SLOW,
     build_turnover_insights,
     turnover_by_category,
+    turnover_by_warehouse,
     turnover_by_status,
     turnover_kpis,
 )
@@ -33,6 +34,8 @@ HEATMAP_RESET_ID = "matrix-abc-turnover-reset"
 HEATMAP_NOTE_ID = "matrix-abc-turnover-note"
 ITEMS_GRID_ID = {"type": "mx-grid", "index": "turnover-items"}
 ITEMS_TITLE_ID = "matrix-turnover-items-title"
+RECEIPTS_DRAWER_ID = "matrix-receipts-drawer"
+RECEIPTS_DRAWER_BODY_ID = "matrix-receipts-drawer-body"
 CHART_HEIGHT = 340
 
 
@@ -195,16 +198,63 @@ def _insights_block(df, dark=False):
         dmc.ListItem([dmc.Text(title, fw=700, size="sm", span=True, c="#1F5E4E"), dmc.Text(" — " + text, size="sm", span=True)])
         for title, text in ins["actions"]
     ]
-    return dmc.SimpleGrid(cols=2, spacing="md", children=[
-        dmc.Paper(withBorder=True, radius=0, p="md", children=[
-            dmc.Text("Выводы", fw=700, mb="xs"),
-            dmc.Stack(gap=6, children=findings or [dmc.Text("Нет данных", c="dimmed", size="sm")]),
-        ]),
-        dmc.Paper(withBorder=True, radius=0, p="md", children=[
-            dmc.Text("Рекомендации", fw=700, mb="xs"),
-            dmc.List(actions, spacing="xs", size="sm"),
-        ]),
+    body = dmc.SimpleGrid(cols=2, spacing="md", children=[
+        dmc.Stack(gap=6, children=[dmc.Text("Выводы", fw=700, size="sm")]
+                  + (findings or [dmc.Text("Нет данных", c="dimmed", size="sm")])),
+        dmc.Stack(gap=6, children=[dmc.Text("Рекомендации", fw=700, size="sm"),
+                                   dmc.List(actions, spacing="xs", size="sm")]),
     ])
+    n_warn = sum(1 for level, _ in ins["findings"] if level in ("bad", "warn", "danger", "warning"))
+    summary = f"{len(ins['findings'])} выводов · {len(ins['actions'])} рекомендаций"
+    if n_warn:
+        summary += f" · требуют внимания: {n_warn}"
+    # Свёрнуто по умолчанию; открытое состояние сохраняется в пределах сессии
+    return dmc.Accordion(
+        id="matrix-turnover-insights",
+        value=None,
+        persistence=True,
+        persistence_type="session",
+        chevronPosition="left",
+        variant="contained",
+        radius=0,
+        children=[
+            dmc.AccordionItem(value="insights", children=[
+                dmc.AccordionControl(
+                    dmc.Group(gap="sm", children=[
+                        DashIconify(icon="tabler:bulb", width=18, color="#2F6656"),
+                        dmc.Text("Выводы и рекомендации", fw=700, size="sm"),
+                        dmc.Text(summary, size="xs", c="dimmed"),
+                    ]),
+                ),
+                dmc.AccordionPanel(body),
+            ]),
+        ],
+    )
+
+
+def _warehouse_grid(df, class_name):
+    wh = turnover_by_warehouse(df)
+    if wh.empty:
+        return dmc.Text("Нет разбивки остатков по складам", size="sm", c="dimmed")
+    cols = [
+        {"headerName": "Склад", "field": "warehouse", "minWidth": 240, "pinned": "left"},
+        {"headerName": "SKU", "field": "sku", "valueFormatter": {"function": "IntOrDash(params.value)"}},
+        {"headerName": "Остаток, шт.", "field": "stock", "valueFormatter": {"function": "IntOrDash(params.value)"}, "sort": "desc"},
+        {"headerName": "Доля запаса", "field": "share", "valueFormatter": {"function": "PctOrDash(params.value)"}},
+        {"headerName": "Неликвид, шт.", "field": "dead", "valueFormatter": {"function": "IntOrDash(params.value)"}},
+        {"headerName": "Очень медленные, шт.", "field": "very_slow", "valueFormatter": {"function": "IntOrDash(params.value)"}},
+        {"headerName": "Заморожено", "field": "frozen_share", "valueFormatter": {"function": "PctOrDash(params.value)"}},
+    ]
+    return dag.AgGrid(
+        id={"type": "mx-grid", "index": "turnover-wh"},
+        rowData=wh.replace({np.nan: None}).to_dict("records"),
+        columnDefs=cols,
+        defaultColDef={"sortable": True, "filter": True, "resizable": True, "flex": 1, "minWidth": 110},
+        dashGridOptions={"rowHeight": 32, "headerHeight": 36, "domLayout": "autoHeight"}
+        if len(wh) <= 12 else {"rowHeight": 32, "headerHeight": 36},
+        className=class_name,
+        style={"width": "100%"} if len(wh) <= 12 else {"width": "100%", "height": "420px"},
+    )
 
 
 def _category_grid(df, class_name):
@@ -213,12 +263,15 @@ def _category_grid(df, class_name):
         {"headerName": "Категория", "field": "cat_name", "minWidth": 220, "pinned": "left"},
         {"headerName": "SKU с остатком", "field": "sku", "valueFormatter": {"function": "IntOrDash(params.value)"}},
         {"headerName": "Остаток, шт.", "field": "stock", "valueFormatter": {"function": "IntOrDash(params.value)"}},
+        {"headerName": "Продано за период, шт.", "field": "sold", "valueFormatter": {"function": "IntOrDash(params.value)"}},
         {"headerName": "Продажи в день", "field": "daily", "valueFormatter": {"function": "TwoDecimal(params.value)"}},
         {"headerName": "Оборач., дн.", "field": "turnover_days", "valueFormatter": {"function": "IntOrDash(params.value)"}, "sort": "desc"},
         {"headerName": "Неликвид, шт.", "field": "dead", "valueFormatter": {"function": "IntOrDash(params.value)"}},
         {"headerName": "Заморожено", "field": "frozen_share", "valueFormatter": {"function": "PctOrDash(params.value)"}},
-        {"headerName": "По закупке", "field": "value", "valueFormatter": {"function": "RUBOrDash(params.value)"}},
     ]
+    if "value" in cat.columns and cat["value"].notna().any() and (cat["value"].fillna(0) != 0).any():
+        cols.append({"headerName": "Остаток по закупке", "field": "value",
+                     "valueFormatter": {"function": "RUBOrDash(params.value)"}})
     return dag.AgGrid(
         id={"type": "mx-grid", "index": "turnover-cat"},
         rowData=cat.replace({np.nan: None}).to_dict("records"),
@@ -230,8 +283,10 @@ def _category_grid(df, class_name):
     )
 
 
-ITEMS_FIELDS = ["fullname", "manu", "abc", "turnover_status", "stock_available", "turnover_days",
-                "last_receipt_date", "sell_through", "stock_value_purchase"]
+ITEMS_FIELDS = ["item_id", "sold_since_receipt", "last_receipt_qty", "days_since_receipt", "fullname", "manu", "abc", "turnover_status", "stock_available", "turnover_days",
+                "last_receipt_date", "sell_through", "stock_value_purchase",
+                "active_days", "period_days", "first_seen_date"]
+ITEMS_HINT = "Клик по строке — приходы товара и расчёт реализации партии"
 
 
 def items_rows(df: pd.DataFrame, full: bool = False) -> list:
@@ -263,6 +318,7 @@ def cell_note(cell=None) -> str:
 
 def _items_grid(df, class_name, rows=None):
     cols = [
+        {"headerName": "item_id", "field": "item_id", "hide": True},
         {"headerName": "Номенклатура", "field": "fullname", "minWidth": 260, "pinned": "left"},
         {"headerName": "Производитель", "field": "manu", "minWidth": 150},
         {"headerName": "ABC", "field": "abc", "minWidth": 80, "maxWidth": 100},
@@ -271,14 +327,18 @@ def _items_grid(df, class_name, rows=None):
         {"headerName": "Оборач., дн.", "field": "turnover_days", "valueFormatter": {"function": "IntOrDash(params.value)"}},
         {"headerName": "Посл. приход", "field": "last_receipt_date", "valueFormatter": {"function": "String(params.value)"}},
         {"headerName": "Реализация партии", "field": "sell_through", "valueFormatter": {"function": "PctOrDash(params.value)"}},
-        {"headerName": "По закупке", "field": "stock_value_purchase", "valueFormatter": {"function": "RUBOrDash(params.value)"}},
     ]
+    # Колонка стоимости появляется, когда в приходах есть цены закупки
+    if df is not None and "stock_value_purchase" in df.columns and df["stock_value_purchase"].notna().any():
+        cols.append({"headerName": "Остаток по закупке", "field": "stock_value_purchase",
+                     "valueFormatter": {"function": "RUBOrDash(params.value)"}})
     return dag.AgGrid(
         id=ITEMS_GRID_ID,
         rowData=rows if rows is not None else items_rows(df),
         columnDefs=cols,
         defaultColDef={"sortable": True, "filter": True, "resizable": True, "flex": 1, "minWidth": 110},
         dashGridOptions={"rowHeight": 32, "headerHeight": 36, "pagination": True,
+                         "rowSelection": "single", "rowClass": "clickable-row",
                          "paginationPageSize": 20, "paginationPageSizeSelector": [20, 50, 100]},
         className=class_name,
         style={"width": "100%", "height": "480px", "--ag-font-size": "12px"},
@@ -362,6 +422,14 @@ def build_turnover_panel(
             ]),
         ]),
         dmc.Paper(withBorder=True, radius=0, p="sm", children=[
+            dmc.Stack(gap=0, mb="xs", children=[
+                dmc.Text("Где лежит запас: по складам", fw=700, size="sm"),
+                dmc.Text("Статус товара общий для всех складов. Высокая доля «заморожено» в салонах "
+                         "часто означает выставочные образцы.", size="xs", c="dimmed"),
+            ]),
+            _warehouse_grid(df, class_name),
+        ]),
+        dmc.Paper(withBorder=True, radius=0, p="sm", children=[
             dmc.Group(justify="space-between", align="center", children=[
                 dmc.Stack(gap=0, children=[
                     dmc.Text("ABC × оборачиваемость", fw=700, size="sm"),
@@ -392,7 +460,10 @@ def build_turnover_panel(
             ),
         ]),
         dmc.Paper(withBorder=True, radius=0, p="sm", children=[
-            dmc.Text(items_title(), id=ITEMS_TITLE_ID, fw=700, size="sm", mb="xs"),
+            dmc.Group(justify="space-between", mb="xs", children=[
+                dmc.Text(items_title(), id=ITEMS_TITLE_ID, fw=700, size="sm"),
+                dmc.Text(ITEMS_HINT, size="xs", c="dimmed"),
+            ]),
             _items_grid(df, class_name, items_rows(df, full=bool(selected))),
         ]),
         dmc.Space(h=30),
@@ -402,7 +473,7 @@ def build_turnover_panel(
 def build_turnover_tab(df: pd.DataFrame, class_name: str = "ag-theme-alpine"):
     header = dmc.Stack(gap=0, children=[
         dmc.Text("Анализ оборачиваемости", fw=700),
-        dmc.Text("Оборачиваемость = доступный остаток / среднедневные продажи за выбранный период. "
+        dmc.Text("Оборачиваемость = доступный остаток / среднедневные продажи. Для товаров, появившихся внутри периода, дни считаются с первой продажи или прихода. "
                  "Фильтры сверху применяются и здесь. Выгрузка — меню «Экспорт» → «Анализ оборачиваемости».",
                  size="xs", c="dimmed"),
     ])
@@ -410,4 +481,107 @@ def build_turnover_tab(df: pd.DataFrame, class_name: str = "ag-theme-alpine"):
         header,
         dmc.Container(id=TURNOVER_CONTENT_ID, fluid=True, px=0,
                       children=build_turnover_panel(df, class_name)),
+        dmc.Drawer(
+            id=RECEIPTS_DRAWER_ID,
+            opened=False,
+            position="right",
+            size=620,
+            title=dmc.Text("Приходы и реализация партии", fw=700),
+            overlayProps={"opacity": 0.35, "blur": 1},
+            children=dmc.Box(id=RECEIPTS_DRAWER_BODY_ID),
+        ),
+    ])
+
+
+
+def _fmt_num(v, suffix=""):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if np.isnan(f):
+        return "—"
+    return f"{f:,.0f}".replace(",", " ") + suffix
+
+
+def render_receipts_panel(row: dict, receipts: pd.DataFrame, show_title: bool = True):
+    """Шторка по товару: как посчитана реализация партии и все приходы."""
+    name = row.get("fullname") or "Товар"
+    stock = row.get("stock_available")
+    sold = row.get("sold_since_receipt")
+    last_date = row.get("last_receipt_date")
+    st = row.get("sell_through")
+
+    calc = []
+    if last_date:
+        calc = [
+            dmc.Text("Как посчитана реализация партии", fw=700, size="sm"),
+            dmc.Text(f"Последний приход: {last_date} · {_fmt_num(row.get('last_receipt_qty'), ' шт.')}", size="sm"),
+            dmc.Text(f"Продано с {last_date} (за вычетом возвратов): {_fmt_num(sold, ' шт.')}", size="sm"),
+            dmc.Text(f"Доступный остаток сейчас: {_fmt_num(stock, ' шт.')}", size="sm"),
+            dmc.Text(
+                f"Реализация = {_fmt_num(sold)} / ({_fmt_num(sold)} + {_fmt_num(stock)}) = "
+                + (f"{float(st):.0%}" if st is not None and not pd.isna(st) else "—"),
+                size="sm", fw=600, c="teal.8",
+            ),
+            dmc.Text(
+                "То есть какая доля товара, который был на складе в день последнего прихода "
+                "(остаток сейчас + продано после), уже продана. Остатки прошлых партий входят в расчёт.",
+                size="xs", c="dimmed",
+            ),
+        ]
+    else:
+        calc = [dmc.Alert("По товару нет загруженных приходов.", color="gray", radius=0)]
+
+    if receipts is None or receipts.empty:
+        table = dmc.Text("Приходов нет", size="sm", c="dimmed")
+    else:
+        has_price = receipts["price_purchase"].notna().any()
+        head = ["Дата", "№ прихода", "Склад", "Штрихкод", "Кол-во"] + (["Цена", "Сумма"] if has_price else [])
+        body = []
+        for r in receipts.itertuples():
+            cells = [
+                pd.to_datetime(r.receipt_date).strftime("%d.%m.%Y") if pd.notna(r.receipt_date) else "—",
+                r.receipt_number or "—",
+                r.warehouse or "—",
+                r.barcode or "—",
+                _fmt_num(r.qty),
+            ]
+            if has_price:
+                cells += [_fmt_num(r.price_purchase, " ₽"), _fmt_num(r.amount_purchase, " ₽")]
+            body.append(dmc.TableTr([
+                dmc.TableTd(c, style={"textAlign": "right"} if i >= 4 else None) for i, c in enumerate(cells)
+            ]))
+        total = [dmc.TableTd("Итого", style={"fontWeight": 700}), dmc.TableTd(f"{receipts['receipt_number'].nunique()} док."),
+                 dmc.TableTd(""), dmc.TableTd(""),
+                 dmc.TableTd(_fmt_num(receipts["qty"].sum()), style={"textAlign": "right", "fontWeight": 700})]
+        if has_price:
+            total += [dmc.TableTd(""), dmc.TableTd(_fmt_num(receipts["amount_purchase"].sum(), " ₽"),
+                                                   style={"textAlign": "right", "fontWeight": 700})]
+        table = dmc.Table(
+            [
+                dmc.TableThead(dmc.TableTr([dmc.TableTh(h, style={"textAlign": "right"} if i >= 4 else None)
+                                            for i, h in enumerate(head)])),
+                dmc.TableTbody(body + [dmc.TableTr(total)]),
+            ],
+            striped=True, highlightOnHover=True, fz="xs", verticalSpacing=4,
+        )
+
+    summary = dmc.Text(
+        f"{row.get('turnover_status') or ''} · остаток {_fmt_num(stock, ' шт.')} · "
+        f"оборачиваемость {_fmt_num(row.get('turnover_days'), ' дн.')}"
+        + (f" (продажи за {_fmt_num(row.get('active_days'), ' дн.')}"
+           + (f", с {row.get('first_seen_date')}" if row.get('active_days') and row.get('period_days')
+              and row.get('active_days') < row.get('period_days') and row.get('first_seen_date') else "")
+           + ")" if row.get('active_days') else ""),
+        size="sm", c="dimmed",
+    )
+    header = dmc.Stack(gap=2, children=[dmc.Text(name, fw=700, size="lg"), summary]) if show_title else summary
+
+    return dmc.Stack(gap="md", children=[
+        header,
+        dmc.Paper(withBorder=True, radius=0, p="sm", style={"borderLeft": "3px solid #2F6656"},
+                  children=dmc.Stack(gap=4, children=calc)),
+        dmc.Text("Приходы товара", fw=700, size="sm"),
+        dmc.ScrollArea(table, type="auto", offsetScrollbars=True),
     ])
