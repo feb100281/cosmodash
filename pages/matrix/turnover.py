@@ -297,7 +297,8 @@ def turnover_kpis(df: pd.DataFrame) -> dict:
 
     with_stock = stock > 0
     total_stock = float(stock[with_stock].sum())
-    total_daily = float(daily[with_stock].sum())
+    # Скорость продаж — по всем товарам, включая распроданные: они тоже формируют спрос категории
+    total_daily = float(daily.sum())
 
     dead = status == STATUS_DEAD
     very_slow = status == STATUS_VERY_SLOW
@@ -396,7 +397,7 @@ def turnover_by_category(df: pd.DataFrame) -> pd.DataFrame:
         "cat_name": df.get("cat_name", pd.Series("Без категории", index=df.index)).fillna("Без категории"),
         "sku": (stock > 0).astype(int),
         "stock": stock,
-        "daily": np.where(stock > 0, daily, 0.0),
+        "daily": daily,
         "sold": _num(df, "quant").fillna(0).clip(lower=0),
         "dead": np.where(status == STATUS_DEAD, stock, 0.0),
         "frozen": np.where(status.isin([STATUS_DEAD, STATUS_VERY_SLOW]), stock, 0.0),
